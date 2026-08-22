@@ -1,5 +1,20 @@
 <title>החצר של פרדי</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="החצר של פרדי">
+<meta property="og:title" content="החצר של פרדי">
+<meta property="og:description" content="גדל · קצור · תרוויח — מצריף קטן ועד אימפריה">
+<meta property="og:url" content="https://ilayfredi.github.io/">
+<meta property="og:image" content="https://ilayfredi.github.io/preview.jpg?v=2">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:locale" content="he_IL">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="החצר של פרדי">
+<meta name="twitter:description" content="גדל · קצור · תרוויח — מצריף קטן ועד אימפריה">
+<meta name="twitter:image" content="https://ilayfredi.github.io/preview.jpg?v=2">
+<meta name="theme-color" content="#5FB53F">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Rubik:wght@400;500;600;700;800;900&display=swap">
@@ -556,7 +571,7 @@ const GOALS=[
 
 /* ---------------------------------------------------------------- save */
 const KEY='fredis_farm_v1';
-const BUILD='10';                     /* bump on every publish, shown in settings */
+const BUILD='12';                     /* bump on every publish, shown in settings */
 let S=null;
 function fresh(){
   return {
@@ -592,9 +607,10 @@ function shareURL(){
   }catch(e){}
   return PUBLISHED;
 }
+/* just the link — WhatsApp renders its own preview card from the og: tags,
+   and any extra text only gets in the way of it */
 function waLink(){
-  const txt='בוא לשחק איתי בחצר של פרדי 🌿🏡\nמגדלים, קוצרים ומוכרים — יש גם יום ולילה אמיתיים:\n'+shareURL();
-  return 'https://wa.me/?text='+encodeURIComponent(txt);
+  return 'https://wa.me/?text='+encodeURIComponent(shareURL());
 }
 
 const goalDone=g=>(S.goals&&S.goals[g.id])?true:false;
@@ -1271,50 +1287,165 @@ function treeProp(c,z,seed){
   }
   c.restore();
 }
-/* Fredi the bear, minding the stall */
+/* Fredi himself, minding the stall: tanned and built, white ribbed vest, long
+   black trousers, van dyke beard, toothpick, arms folded. Idles with a weight
+   shift and a slow chew; throws a fist up when a harvest lands.
+   Built on a four-head cartoon proportion: head 26 tall, torso 32, legs 38. */
 function fredi(c,z,t){
   const j=FRED.jump;
-  const hop=-Math.sin(j*Math.PI)*32*z;                 /* cheers on every harvest */
-  const bob=Math.sin(t*1.9)*2.2*z+hop;
-  /* wave now and then rather than forever */
-  const waveOn=clamp((Math.sin(t*0.29)-0.72)*4,0,1);
-  const wave=Math.sin(t*7.2)*waveOn+j;
-  const sq=1+Math.sin(j*Math.PI)*0.10;
-  c.save(); c.translate(0,bob); c.scale(1/sq,sq);
-  c.fillStyle='rgba(0,0,0,.17)';
-  c.save(); c.scale(sq,1/sq);
-  diamond(c,0,(-bob)/1,58*z*(1-Math.sin(j*Math.PI)*0.25),24*z); c.fill();
+  const hop=-Math.sin(j*Math.PI)*30*z;
+  const bob=Math.sin(t*1.5)*1.4*z+hop;
+  const shift=Math.sin(t*0.52)*2.2*z;
+  const lean=Math.sin(t*0.52)*0.03;
+  const chew=Math.sin(t*5.2);
+  const look=Math.sin(t*0.31)*0.085;
+  const cheer=clamp(j*1.7,0,1);
+
+  const SKIN='#A9713F', SKIN_D='#8C5B31', SKIN_L='#C18B56';
+  const VEST='#F7F3E9', VEST_D='#DFD8C6';
+  const PANT='#25272E', PANT_D='#15171C';
+  const HAIR='#1B1511';
+
+  const HIP=-38*z, CHEST=-70*z, SHO=-65*z, HEAD=-91*z;
+
+  c.save();
+  castShadow(c,50,20,92,z);
+  c.translate(shift,bob);
+  c.rotate(lean*0.3);
+
+  /* legs, short and planted */
+  for(const s of [-1,1]){
+    const lx=s*7*z;
+    c.fillStyle=s<0?PANT_D:PANT;
+    roundPoly(c,[[lx-7.5*z,HIP],[lx+7.5*z,HIP],[lx+6*z,-5*z],[lx-6*z,-5*z]],5*z); c.fill();
+    c.fillStyle='#3B2F26';
+    roundPoly(c,[[lx-7*z,-6.5*z],[lx+8.5*z,-6.5*z],[lx+8.5*z,0],[lx-7*z,0]],3*z); c.fill();
+  }
+
+  /* torso: vest tapering from broad shoulders to the waist */
+  c.fillStyle=VEST;
+  roundPoly(c,[[-15*z,CHEST],[15*z,CHEST],[12*z,HIP+2*z],[-12*z,HIP+2*z]],6*z); c.fill();
+  c.fillStyle=VEST_D;
+  roundPoly(c,[[-15*z,CHEST],[-5*z,CHEST],[-4*z,HIP+2*z],[-12*z,HIP+2*z]],6*z); c.fill();
+  c.strokeStyle='rgba(0,0,0,.07)'; c.lineWidth=0.9*z;
+  for(let i=1;i<6;i++){
+    const x=-11*z+i*3.8*z;
+    c.beginPath(); c.moveTo(x,CHEST+7*z); c.lineTo(x,HIP); c.stroke();
+  }
+  /* chest showing between the straps */
+  c.fillStyle=SKIN;
+  roundPoly(c,[[-10*z,CHEST-2*z],[-3.5*z,CHEST-2*z],[-3.5*z,CHEST+10*z],[-10*z,CHEST+10*z]],3*z); c.fill();
+  roundPoly(c,[[3.5*z,CHEST-2*z],[10*z,CHEST-2*z],[10*z,CHEST+10*z],[3.5*z,CHEST+10*z]],3*z); c.fill();
+  c.fillStyle=SKIN_D;
+  c.beginPath(); c.ellipse(0,CHEST+8*z,6*z,4*z,0,0,TAU); c.fill();
+  /* silver chain */
+  c.strokeStyle='#D5DCE6'; c.lineWidth=1.4*z; c.lineCap='round';
+  c.beginPath(); c.moveTo(-6.5*z,CHEST-1*z);
+  c.quadraticCurveTo(0,CHEST+8*z,6.5*z,CHEST-1*z); c.stroke();
+  c.fillStyle='#EAF0F7';
+  c.beginPath(); c.arc(0,CHEST+5.6*z,1.3*z,0,TAU); c.fill();
+
+  /* upper arms hanging off the shoulders */
+  const arm=(s,dark)=>{
+    c.fillStyle=dark?SKIN_D:SKIN;
+    c.save(); c.translate(s*15*z,SHO+2*z); c.rotate(s*0.20);
+    roundPoly(c,[[-6*z,-5*z],[6*z,-5*z],[5.5*z,16*z],[-5.5*z,16*z]],6*z); c.fill();
+    c.fillStyle='rgba(255,255,255,.13)';
+    c.beginPath(); c.ellipse(-1.5*z,1*z,3.4*z,5.5*z,0,0,TAU); c.fill();
+    c.restore();
+  };
+  arm(-1,true); arm(1,false);
+
+  if(cheer<0.5){
+    /* forearms folded across the chest, near one over far one */
+    const FY=CHEST+24*z;
+    c.fillStyle=SKIN_D;
+    roundPoly(c,[[-14*z,FY-4*z],[12*z,FY-6.5*z],[13*z,FY-0.5*z],[-13*z,FY+2*z]],3.6*z); c.fill();
+    c.fillStyle=SKIN;
+    roundPoly(c,[[-13*z,FY+1*z],[13*z,FY-1.5*z],[14*z,FY+4.5*z],[-12*z,FY+7*z]],3.6*z); c.fill();
+    c.fillStyle='rgba(255,255,255,.13)';
+    roundPoly(c,[[-10*z,FY+2*z],[8*z,FY-0.5*z],[8.5*z,FY+2*z],[-9.5*z,FY+4.5*z]],2.5*z); c.fill();
+    c.fillStyle=SKIN_L;
+    c.beginPath(); c.ellipse(-14*z,FY+4.5*z,4.6*z,4*z,0,0,TAU); c.fill();
+    c.beginPath(); c.ellipse(14*z,FY-4*z,4.2*z,3.8*z,0,0,TAU); c.fill();
+  } else {
+    const FY=CHEST+19*z;
+    c.fillStyle=SKIN_D;
+    roundPoly(c,[[-15*z,FY-3*z],[6*z,FY-6*z],[7*z,FY+1.5*z],[-14*z,FY+4.5*z]],4.5*z); c.fill();
+    c.save(); c.translate(15*z,SHO+2*z); c.rotate(-0.55-cheer*0.75);
+    c.fillStyle=SKIN;
+    roundPoly(c,[[-5.5*z,0],[5.5*z,0],[5*z,-26*z],[-5*z,-26*z]],5*z); c.fill();
+    c.fillStyle=SKIN_L;
+    c.beginPath(); c.arc(0,-29*z,6.2*z,0,TAU); c.fill();
+    c.restore();
+  }
+
+  /* neck and head */
+  c.save();
+  c.translate(0,0); c.rotate(look*0.45-cheer*0.1);
+  c.fillStyle=SKIN_D;
+  roundPoly(c,[[-5*z,CHEST-13*z],[5*z,CHEST-13*z],[5*z,CHEST+1*z],[-5*z,CHEST+1*z]],3*z); c.fill();
+  c.fillStyle=SKIN;
+  c.beginPath(); c.ellipse(0,HEAD,12*z,13.5*z,0,0,TAU); c.fill();
+  c.fillStyle=SKIN_D;
+  c.beginPath(); c.ellipse(-6.5*z,HEAD,5*z,11.5*z,0,0,TAU); c.fill();
+  for(const s of [-1,1]){
+    c.fillStyle=SKIN_D;
+    c.beginPath(); c.ellipse(s*12*z,HEAD+1*z,2.8*z,3.8*z,0,0,TAU); c.fill();
+  }
+  c.fillStyle='#DCE3EC';
+  c.beginPath(); c.arc(-11.8*z,HEAD+3.5*z,1.4*z,0,TAU); c.fill();
+
+  /* van dyke: moustache, soul patch, chin beard, jaw shaved */
+  c.fillStyle=HAIR;
+  roundPoly(c,[[-4.1*z,HEAD+5.4*z],[4.1*z,HEAD+5.4*z],[3.1*z,HEAD+11*z],[-3.1*z,HEAD+11*z]],3*z); c.fill();
+  c.beginPath(); c.ellipse(-3.2*z,HEAD+1.4*z,3.3*z,1.9*z,0.16,0,TAU); c.fill();
+  c.beginPath(); c.ellipse(3.2*z,HEAD+1.4*z,3.3*z,1.9*z,-0.16,0,TAU); c.fill();
+  c.beginPath(); c.ellipse(0,HEAD+4.4*z,1.5*z,1.6*z,0,0,TAU); c.fill();
+
+  /* nose, eyes, heavy brows */
+  c.fillStyle=SKIN_D;
+  c.beginPath(); c.ellipse(0,HEAD-0.5*z,2.2*z,2.9*z,0,0,TAU); c.fill();
+  const blink=(Math.sin(t*0.77)>0.975)?0.12:1;
+  for(const s of [-1,1]){
+    c.fillStyle='#FFFFFF';
+    c.beginPath(); c.ellipse(s*5*z,HEAD-4.5*z,2.9*z,2.9*z*blink,0,0,TAU); c.fill();
+    c.fillStyle='#2A1F16';
+    c.beginPath(); c.ellipse(s*5*z+look*6*z,HEAD-4.5*z,1.6*z,1.8*z*blink,0,0,TAU); c.fill();
+    c.fillStyle=HAIR;
+    roundPoly(c,[[s*1.6*z,HEAD-9.4*z],[s*8.8*z,HEAD-10.4*z],[s*8.8*z,HEAD-7.8*z],[s*1.6*z,HEAD-7*z]],1.3*z); c.fill();
+  }
+
+  /* hair: skin fade at the sides, tight curls on top */
+  c.fillStyle='#4A3A2C';
+  c.beginPath(); c.ellipse(0,HEAD-7.5*z,11.4*z,8*z,0,Math.PI,TAU); c.fill();
+  c.fillStyle='#2A211A';
+  c.beginPath(); c.ellipse(0,HEAD-8*z,11.6*z,8.6*z,0,Math.PI,TAU); c.fill();
+  c.fillStyle=HAIR;
+  c.beginPath(); c.ellipse(0,HEAD-10.5*z,10.6*z,7.6*z,0,Math.PI,TAU); c.fill();
+  c.fillRect(-10.6*z,HEAD-10.5*z,21.2*z,2.2*z);
+  for(let i=0;i<9;i++){
+    const a=Math.PI+(i/8)*Math.PI;
+    c.beginPath();
+    c.arc(Math.cos(a)*9.4*z, HEAD-10.5*z+Math.sin(a)*6.6*z, (2.8+hash(i*7)*1.5)*z, 0, TAU);
+    c.fill();
+  }
+  for(let i=0;i<4;i++){
+    c.beginPath();
+    c.arc((-1+i*3.1)*z, HEAD+(-15.5-hash(i*5)*2.6)*z, (2.7+hash(i*3)*1.2)*z, 0, TAU);
+    c.fill();
+  }
+  c.fillStyle='rgba(255,255,255,.10)';
+  c.beginPath(); c.ellipse(-2.5*z,HEAD-13*z,4.6*z,2.4*z,-0.25,0,TAU); c.fill();
+
+  /* toothpick */
+  c.save();
+  c.translate(4.2*z,HEAD+3*z); c.rotate(-0.3+chew*0.09);
+  c.fillStyle='#E8D9AE';
+  roundPoly(c,[[0,-0.8*z],[11*z,-1.3*z],[11*z,0.3*z],[0,0.8*z]],0.6*z); c.fill();
   c.restore();
-  const fur='#9A6B41', furD='#7C5230', muz='#D9B183';
-  c.fillStyle=furD; c.beginPath(); c.ellipse(-11*z,-14*z,8*z,14*z,0,0,TAU); c.fill();
-  c.beginPath(); c.ellipse(11*z,-14*z,8*z,14*z,0,0,TAU); c.fill();
-  c.fillStyle='#4E8FCB'; roundPoly(c,[[-19*z,-58*z],[19*z,-58*z],[16*z,-12*z],[-16*z,-12*z]],9*z); c.fill();
-  c.fillStyle=fur; roundPoly(c,[[-19*z,-64*z],[19*z,-64*z],[18*z,-46*z],[-18*z,-46*z]],9*z); c.fill();
-  c.fillStyle='#3A6E9E'; c.fillRect(-9*z,-58*z,5*z,16*z); c.fillRect(4*z,-58*z,5*z,16*z);
-  c.save(); c.translate(-22*z,-56*z); c.rotate(0.35);
-  c.fillStyle=fur; roundPoly(c,[[-6*z,0],[6*z,0],[6*z,26*z],[-6*z,26*z]],6*z); c.fill(); c.restore();
-  c.save(); c.translate(22*z,-56*z); c.rotate(-0.4-wave*0.5);
-  c.fillStyle=fur; roundPoly(c,[[-6*z,0],[6*z,0],[6*z,26*z],[-6*z,26*z]],6*z); c.fill(); c.restore();
-  c.fillStyle=furD;
-  c.beginPath(); c.arc(-15*z,-92*z,10*z,0,TAU); c.fill();
-  c.beginPath(); c.arc(15*z,-92*z,10*z,0,TAU); c.fill();
-  c.fillStyle=muz;
-  c.beginPath(); c.arc(-15*z,-92*z,5*z,0,TAU); c.fill();
-  c.beginPath(); c.arc(15*z,-92*z,5*z,0,TAU); c.fill();
-  c.fillStyle=fur; c.beginPath(); c.ellipse(0,-82*z,25*z,23*z,0,0,TAU); c.fill();
-  c.fillStyle=muz; c.beginPath(); c.ellipse(0,-74*z,15*z,11*z,0,0,TAU); c.fill();
-  c.fillStyle='#3A2A1C';
-  c.beginPath(); c.ellipse(0,-80*z,5.5*z,4*z,0,0,TAU); c.fill();
-  const blink=(Math.sin(t*0.9)>0.97)?0.15:1;
-  c.beginPath(); c.ellipse(-9*z,-88*z,3.2*z,3.6*z*blink,0,0,TAU); c.fill();
-  c.beginPath(); c.ellipse(9*z,-88*z,3.2*z,3.6*z*blink,0,0,TAU); c.fill();
-  c.fillStyle='#fff';
-  c.beginPath(); c.arc(-10*z,-89.5*z,1.2*z,0,TAU); c.fill();
-  c.beginPath(); c.arc(8*z,-89.5*z,1.2*z,0,TAU); c.fill();
-  c.strokeStyle='#3A2A1C'; c.lineWidth=1.6*z; c.lineCap='round';
-  c.beginPath(); c.moveTo(-6*z,-72*z); c.quadraticCurveTo(0,-68*z,6*z,-72*z); c.stroke();
-  c.fillStyle='#C9A227'; roundPoly(c,[[-26*z,-104*z],[26*z,-104*z],[22*z,-99*z],[-22*z,-99*z]],3*z); c.fill();
-  c.fillStyle='#E0B92E'; roundPoly(c,[[-17*z,-122*z],[17*z,-122*z],[19*z,-104*z],[-19*z,-104*z]],5*z); c.fill();
+
+  c.restore();
   c.restore();
 }
 
@@ -2924,6 +3055,8 @@ boot();
 window.__FARM={get S(){return S;}, fmt, STRAINS, plant, harvest, sell, addXP, refreshHUD,
   hour(h){ HOUR_OVERRIDE=h; },
   ensure(){ ensurePlots(); fitCam(); },
+  char(el,k,tt){ const x=el.getContext("2d"); x.clearRect(0,0,el.width,el.height);
+    x.save(); x.translate(el.width/2,el.height-14); fredi(x,k||3,tt===undefined?T:tt); x.restore(); },
   sim(n){ for(const p of S.plots){ if(p.sid) p.at-=n; } }};
 })();
 </script>
