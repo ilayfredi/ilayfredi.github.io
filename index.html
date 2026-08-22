@@ -556,7 +556,7 @@ const GOALS=[
 
 /* ---------------------------------------------------------------- save */
 const KEY='fredis_farm_v1';
-const BUILD='9';                     /* bump on every publish, shown in settings */
+const BUILD='10';                     /* bump on every publish, shown in settings */
 let S=null;
 function fresh(){
   return {
@@ -584,11 +584,11 @@ function claimDaily(){
 /* Sharing. Inside the artifact viewer the page runs in a sandboxed frame, so
    location.href is not the address anyone can open — fall back to the published
    URL when we are not already sitting on a claude.ai page. */
-const PUBLISHED='https://claude.ai/code/artifact/af90a0a5-f118-4739-9fd7-c10607760a0c';
+const PUBLISHED='https://ilayfredi.github.io/';
 function shareURL(){
   try{
     const h=String(location.href);
-    if(/^https?:/.test(h)&&/claude\.ai/.test(h)) return h;
+    if(/^https?:/.test(h)&&!/localhost/.test(h)) return h;
   }catch(e){}
   return PUBLISHED;
 }
