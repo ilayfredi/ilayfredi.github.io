@@ -15,6 +15,13 @@
 <meta name="twitter:description" content="גדל · קצור · תרוויח — מצריף קטן ועד אימפריה">
 <meta name="twitter:image" content="https://ilayfredi.github.io/fredisyard/preview.jpg?v=2">
 <meta name="theme-color" content="#5FB53F">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="החצר של פרדי">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Rubik:wght@400;500;600;700;800;900&display=swap">
@@ -571,7 +578,7 @@ const GOALS=[
 
 /* ---------------------------------------------------------------- save */
 const KEY='fredis_farm_v1';
-const BUILD='13';                     /* bump on every publish, shown in settings */
+const BUILD='15';                     /* bump on every publish, shown in settings */
 let S=null;
 function fresh(){
   return {
@@ -611,6 +618,31 @@ function shareURL(){
    and any extra text only gets in the way of it */
 function waLink(){
   return 'https://wa.me/?text='+encodeURIComponent(shareURL());
+}
+
+/* Backup codes. localStorage lives in one browser on one device and phones do
+   clear it, so the save can also be carried out as text and pasted back in. */
+function exportSave(){
+  const o=JSON.parse(JSON.stringify(S));
+  o.plots=S.plots.filter(p=>p.sid).map(p=>[p.i,p.sid,p.at,p.dur,p.wet?1:0]);
+  o._c=1;
+  return btoa(unescape(encodeURIComponent(JSON.stringify(o))));
+}
+function importSave(str){
+  const o=JSON.parse(decodeURIComponent(escape(atob(String(str).replace(/\s+/g,'')))));
+  if(!o||typeof o.coins!=='number'||!Array.isArray(o.plots)) throw new Error('bad');
+  if(o._c){
+    const full=[];
+    for(const row of o.plots){
+      if(!Array.isArray(row)) continue;
+      const [i,sid,at,dur,wet]=row;
+      full[i]={i,gx:0,gy:0,sid,at,dur,wet:!!wet};
+    }
+    o.plots=full; delete o._c;
+  }
+  RESETTING=true;                      /* stop the autosave clobbering the import */
+  localStorage.setItem(KEY,JSON.stringify(o));
+  location.reload();
 }
 
 const goalDone=g=>(S.goals&&S.goals[g.id])?true:false;
@@ -804,11 +836,27 @@ function windAt(gx,gy){
 const cv=$('cv'), ctx=cv.getContext('2d');
 let VW=0, VH=0, DPR=1;
 const cam={x:0, y:0, z:1, tz:1};
+/* Render scale adapts to the device. A full farm is a lot of fill, and phones
+   report a device pixel ratio of 3, which would mean nine times the pixels of a
+   1x buffer. Drop it when frames get long, raise it again when there is room. */
+let RES=1, RES_MAX=2;
 function resize(){
-  DPR=Math.min(2, window.devicePixelRatio||1);
+  RES_MAX=Math.min(2, window.devicePixelRatio||1);
+  if(RES>RES_MAX) RES=RES_MAX;
+  DPR=RES;
   VW=cv.clientWidth||window.innerWidth; VH=cv.clientHeight||window.innerHeight;
   cv.width=Math.max(1,Math.round(VW*DPR)); cv.height=Math.max(1,Math.round(VH*DPR));
 }
+let fAcc=0, fN=0;
+function autoRes(dt){
+  fAcc+=dt; fN++;
+  if(fAcc<1.2) return;
+  const ms=(fAcc/fN)*1000; fAcc=0; fN=0;
+  const floor=Math.min(1, RES_MAX);
+  if(ms>26 && RES>floor){ RES=Math.max(floor,RES-0.2); resizeNow(); }
+  else if(ms<15 && RES<RES_MAX){ RES=Math.min(RES_MAX,RES+0.2); resizeNow(); }
+}
+function resizeNow(){ lastW=-1; }
 addEventListener('resize',resize);
 
 /* Frame the whole property — including how tall the house has grown — so the
@@ -950,9 +998,9 @@ function sprite(st,bk){
   if(s) return s;
   if(SPR.size>90) SPR.clear();
   const c=document.createElement('canvas');
-  c.width=SPRW*2; c.height=SPRH*2;
-  const x=c.getContext('2d');
-  x.scale(2,2); x.translate(SPRW/2,SPRH-14);
+  c.width=Math.round(SPRW*1.4); c.height=Math.round(SPRH*1.4);
+  const x=c.getContext("2d");
+  x.scale(1.4,1.4); x.translate(SPRW/2,SPRH-14);
   drawPlant(x,bk/(BUCKETS-1),st);
   SPR.set(key,c);
   return c;
@@ -1023,6 +1071,44 @@ function portrait(el,st,g){
   c.scale(k,k);
   drawPlant(c,g===undefined?1:g,st);
   c.restore();
+}
+
+/* The home-screen icon, drawn with the game's own leaf so it matches the art.
+   Square, high contrast, readable down to about 40 pixels. */
+function appIcon(el){
+  const S=el.width, c=el.getContext('2d');
+  const u=S/512;
+  c.clearRect(0,0,S,S);
+  /* deep ground so the bright leaf reads at home-screen size */
+  const g=c.createLinearGradient(0,0,0,S);
+  g.addColorStop(0,'#2C6E4A'); g.addColorStop(0.5,'#1D5636'); g.addColorStop(1,'#123B26');
+  c.fillStyle=g; c.fillRect(0,0,S,S);
+  const sg=c.createRadialGradient(S*0.76,S*0.18,4,S*0.76,S*0.18,S*0.55);
+  sg.addColorStop(0,'rgba(255,238,150,.40)'); sg.addColorStop(1,'rgba(255,238,150,0)');
+  c.fillStyle=sg; c.fillRect(0,0,S,S);
+  c.fillStyle='rgba(8,32,18,.45)';
+  c.beginPath(); c.moveTo(0,S);
+  c.quadraticCurveTo(S*0.3,S*0.72,S*0.62,S*0.82);
+  c.quadraticCurveTo(S*0.85,S*0.88,S,S*0.78);
+  c.lineTo(S,S); c.closePath(); c.fill();
+  /* the leaf, with a dark rim so it never merges with the ground */
+  const dark={leaf:'#0E3A22', leafD:'#0E3A22', bud:'#0E3A22', hair:'#0E3A22'};
+  const st={leaf:'#9CE84F', leafD:'#6FCB34', bud:'#EFFFC9', hair:'#FFE066'};
+  c.save();
+  c.translate(S*0.5,S*0.815);
+  c.shadowColor='rgba(4,20,10,.55)'; c.shadowBlur=30*u; c.shadowOffsetY=12*u;
+  c.strokeStyle='#2C7A3E'; c.lineWidth=15*u; c.lineCap='round';
+  c.beginPath(); c.moveTo(0,0); c.lineTo(0,-62*u); c.stroke();
+  c.shadowColor='transparent';
+  c.save(); c.translate(0,-62*u);
+  c.save(); c.scale(1.10,1.10); fan(c,198*u,dark,false); c.restore();
+  fan(c,198*u,st,false);
+  c.restore();
+  c.restore();
+  /* glossy top edge */
+  const gl=c.createLinearGradient(0,0,0,S*0.42);
+  gl.addColorStop(0,'rgba(255,255,255,.22)'); gl.addColorStop(1,'rgba(255,255,255,0)');
+  c.fillStyle=gl; c.fillRect(0,0,S,S*0.42);
 }
 
 /* ---------------------------------------------------------------- props */
@@ -1708,21 +1794,17 @@ function drawGround(){
   ctx.save();
   ctx.beginPath(); ctx.rect(0,hz,VW,VH-hz); ctx.clip();
 
-  /* mown stripes over whichever tiles are actually on screen */
-  const a=s2g(0,hz), b=s2g(VW,hz), c=s2g(0,VH), d=s2g(VW,VH);
-  const gx0=Math.floor(Math.min(a.gx,b.gx,c.gx,d.gx))-1, gx1=Math.ceil(Math.max(a.gx,b.gx,c.gx,d.gx))+1;
-  const gy0=Math.floor(Math.min(a.gy,b.gy,c.gy,d.gy))-1, gy1=Math.ceil(Math.max(a.gy,b.gy,c.gy,d.gy))+1;
+  /* Mown stripes only inside the fence. Tiling every visible cell cost
+     thousands of path fills a frame and dragged a grown farm down to 20fps. */
   const YB=yardB();
-  const span=(gx1-gx0)*(gy1-gy0);
-  if(span<4200){
-    for(let gx=gx0;gx<gx1;gx++) for(let gy=gy0;gy<gy1;gy++){
-      if(((gx+gy)&1)===0) continue;
-      const p=iso(gx+0.5,gy+0.5), s=w2s(p.x,p.y);
-      if(s.y<hz-40||s.y>VH+40) continue;
-      const yb=YB, inYard=(gx>=yb.x0&&gx<yb.x1&&gy>=yb.y0&&gy<yb.y1);
-      ctx.fillStyle=inYard?'rgba(64,142,40,.26)':'rgba(70,134,52,.17)';
-      diamond(ctx,s.x,s.y,TW*cam.z,TH*cam.z); ctx.fill();
-    }
+  const gx0=Math.floor(YB.x0), gx1=Math.ceil(YB.x1);
+  const gy0=Math.floor(YB.y0), gy1=Math.ceil(YB.y1);
+  ctx.fillStyle='rgba(64,142,40,.26)';
+  for(let gx=gx0;gx<gx1;gx++) for(let gy=gy0;gy<gy1;gy++){
+    if(((gx+gy)&1)===0) continue;
+    const p=iso(gx+0.5,gy+0.5), s=w2s(p.x,p.y);
+    if(s.y<hz-40||s.y>VH+40||s.x<-TW||s.x>VW+TW) continue;
+    diamond(ctx,s.x,s.y,TW*cam.z,TH*cam.z); ctx.fill();
   }
   /* wildflowers and tufts, seeded so they never crawl */
   for(let i=0;i<190;i++){
@@ -1886,17 +1968,19 @@ function drawPlant2(p){
   ctx.fillStyle='rgba(0,0,0,.20)';
   ctx.beginPath(); ctx.ellipse(0,0,(14+22*g)*z,(6+9*g)*z,0,0,TAU); ctx.fill();
   if(ready){
+    /* one cached glow sprite, blitted — building a radial gradient per ripe
+       plant per frame was one of the two things killing a full farm */
     const pl=0.5+0.5*Math.sin(T*2.6+p.i);
-    const gr=ctx.createRadialGradient(0,-46*z,2,0,-46*z,74*z);
-    gr.addColorStop(0,'rgba(255,240,150,'+(0.30+0.14*pl)+')');
-    gr.addColorStop(1,'rgba(255,240,150,0)');
-    ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(0,-46*z,74*z,0,TAU); ctx.fill();
+    const gs=glowSprite(), r=74*z;
+    ctx.globalAlpha=0.30+0.14*pl;
+    ctx.drawImage(gs,-r,-46*z-r,r*2,r*2);
+    ctx.globalAlpha=1;
     ctx.translate(0,Math.sin(T*2.6+p.i)*2.2*z);
   }
   ctx.rotate(sway);
   ctx.drawImage(spr,-sw/2,-sh+14*z,sw,sh);
   ctx.restore();
-  if(ready){
+  if(ready&&z>0.55){
     for(let i=0;i<3;i++){
       const a=T*1.5+i*2.1+p.i, rr=(26+10*Math.sin(a*1.3))*z;
       const sx=s.x+Math.cos(a)*rr, sy=s.y-(50+18*Math.sin(a*0.8))*z;
@@ -1907,9 +1991,29 @@ function drawPlant2(p){
     }
   }
 }
+/* one radial glow, reused by every ripe plant */
+let GLOW=null;
+function glowSprite(){
+  if(GLOW) return GLOW;
+  const S=128, c=document.createElement('canvas'); c.width=c.height=S;
+  const x=c.getContext('2d');
+  const g=x.createRadialGradient(S/2,S/2,2,S/2,S/2,S/2);
+  g.addColorStop(0,'rgba(255,240,150,1)'); g.addColorStop(1,'rgba(255,240,150,0)');
+  x.fillStyle=g; x.beginPath(); x.arc(S/2,S/2,S/2,0,TAU); x.fill();
+  GLOW=c; return c;
+}
+/* measureText per plant per frame was the other cost; widths are stable */
+const TXTW=new Map();
+function textW(txt,px){
+  const k=txt+'|'+px;
+  let w=TXTW.get(k);
+  if(w===undefined){ w=ctx.measureText(txt).width; if(TXTW.size>400) TXTW.clear(); TXTW.set(k,w); }
+  return w;
+}
 function bubble(sx,sy,txt,bg,fg,z){
-  ctx.font='900 '+Math.round(14*z)+'px "Segoe UI",Arial,sans-serif';
-  const w=Math.max(34*z, ctx.measureText(txt).width+20*z), h=24*z;
+  const px=Math.round(14*z);
+  ctx.font='900 '+px+'px "Segoe UI",Arial,sans-serif';
+  const w=Math.max(34*z, textW(txt,px)+20*z), h=24*z;
   ctx.save();
   ctx.fillStyle='rgba(0,0,0,.18)';
   roundPoly(ctx,[[sx-w/2,sy-h+3*z],[sx+w/2,sy-h+3*z],[sx+w/2,sy+3*z],[sx-w/2,sy+3*z]],h/2); ctx.fill();
@@ -2916,6 +3020,31 @@ function openMore(){
   sh.appendChild(cp);
   b.appendChild(sh);
 
+  const bk=document.createElement('div'); bk.className='setrow';
+  bk.innerHTML='<div class="lab">גיבוי התקדמות<div style="font-size:11px;font-weight:700;'+
+    'color:var(--ink2);margin-top:3px">קוד להעברה לטלפון אחר</div></div>';
+  const bc=document.createElement('button'); bc.className='mini j j-gold'; bc.textContent='העתק קוד';
+  bc.onclick=async()=>{
+    try{ await navigator.clipboard.writeText(exportSave()); bc.textContent='הועתק ✓'; }
+    catch(e){
+      const t=document.createElement('textarea');
+      t.value=exportSave(); document.body.appendChild(t); t.select();
+      try{ document.execCommand('copy'); bc.textContent='הועתק ✓'; }catch(_){ bc.textContent='לא הצליח'; }
+      t.remove();
+    }
+    setTimeout(()=>bc.textContent='העתק קוד',2000);
+  };
+  bk.appendChild(bc);
+  const br=document.createElement('button'); br.className='mini j j-cream'; br.textContent='שחזר';
+  br.onclick=()=>{
+    const s=prompt('הדבק כאן את קוד הגיבוי:');
+    if(!s) return;
+    try{ importSave(s); }
+    catch(e){ SFX.nope(); toast('הקוד לא תקין'); }
+  };
+  bk.appendChild(br);
+  b.appendChild(bk);
+
   const rs=document.createElement('div'); rs.className='setrow';
   rs.innerHTML='<div class="lab">התחל חווה מחדש</div>';
   const rb=document.createElement('button'); rb.className='mini j j-cream'; rb.textContent='איפוס';
@@ -2943,7 +3072,9 @@ function frame(t){
   cam.z=lerp(cam.z,cam.tz,1-Math.pow(0.002,dt));
   resizeIfNeeded();
   ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.imageSmoothingQuality='low';   /* downscaling 100+ plant sprites adds up */
   scene(dt);
+  autoRes(dt);
   acc+=dt;
   if(acc>0.5){
     acc=0; tickOrders(); refreshHUD();
@@ -2954,7 +3085,7 @@ function frame(t){
   }
   requestAnimationFrame(frame);
 }
-let lastW=0,lastH=0;
+let lastW=-1,lastH=-1;
 function resizeIfNeeded(){
   const w=cv.clientWidth||window.innerWidth, h=cv.clientHeight||window.innerHeight;
   if(w===lastW&&h===lastH) return;
@@ -3047,6 +3178,10 @@ $('ireset').onclick=()=>{
   if(!confirm("להתחיל חווה חדשה לגמרי? כל ההתקדמות תימחק.")) return;
   hardReset();
 };
+/* cache the game itself so it opens and plays with no signal at all */
+if('serviceWorker' in navigator && /^https?:/.test(location.protocol)){
+  addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
 addEventListener('visibilitychange',()=>{ if(document.hidden) save(); });
 addEventListener('pagehide',save);
 setInterval(save,15000);
@@ -3055,6 +3190,11 @@ boot();
 window.__FARM={get S(){return S;}, fmt, STRAINS, plant, harvest, sell, addXP, refreshHUD,
   hour(h){ HOUR_OVERRIDE=h; },
   ensure(){ ensurePlots(); fitCam(); },
+  bench(n){ n=n||60; const t0=performance.now();
+    for(let i=0;i<n;i++){ T+=1/60; DT=1/60; resizeIfNeeded();
+      ctx.setTransform(DPR,0,0,DPR,0,0); scene(1/60); }
+    return +((performance.now()-t0)/n).toFixed(2); },
+  icon(el){ appIcon(el); },
   char(el,k,tt){ const x=el.getContext("2d"); x.clearRect(0,0,el.width,el.height);
     x.save(); x.translate(el.width/2,el.height-14); fredi(x,k||3,tt===undefined?T:tt); x.restore(); },
   sim(n){ for(const p of S.plots){ if(p.sid) p.at-=n; } }};
