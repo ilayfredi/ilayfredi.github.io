@@ -41,10 +41,17 @@
   --ui:"Rubik","Segoe UI","Arial Hebrew",Arial,sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;overflow:hidden;background:#4FC3E8;color:var(--ink);
+/* Ground green, not sky blue. Any sliver the canvas cannot cover — the strip a
+   mobile browser leaves when its bottom bar slides away, or the gesture area in
+   the installed app — used to show up as a blue band under the game. */
+html,body{height:100%;overflow:hidden;background:#57A33C;color:var(--ink);
   font-family:var(--ui);font-weight:600;-webkit-text-size-adjust:100%;overscroll-behavior:none}
-body{user-select:none;-webkit-user-select:none;touch-action:none;direction:rtl}
-#cv{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+@supports (height:100dvh){ html,body{height:100dvh} }
+body{position:fixed;inset:0;width:100%;
+  user-select:none;-webkit-user-select:none;touch-action:none;direction:rtl}
+#cv{position:fixed;top:0;left:0;width:100%;height:100%;display:block;
+  background:#57A33C;touch-action:none}
+@supports (height:100dvh){ #cv{height:100dvh} }
 .num{font-family:var(--disp);font-weight:600;font-variant-numeric:tabular-nums}
 
 /* ============================================================ juicy button */
@@ -95,8 +102,6 @@ body{user-select:none;-webkit-user-select:none;touch-action:none;direction:rtl}
 .tpill span{font-size:15px;line-height:1}
 .tpill b{font-family:var(--disp);font-weight:600;font-size:14px;color:var(--ink);
   font-variant-numeric:tabular-nums}
-@media (max-width:400px){.tpill{display:none}}
-
 /* goals, stats and settings */
 .gsec{font-family:var(--disp);font-weight:600;font-size:15px;color:var(--ink);
   margin:14px 2px 9px;display:flex;align-items:center;gap:8px}
@@ -343,6 +348,32 @@ body.pre .hud,body.pre #quick{opacity:0;pointer-events:none}
 #iwa:active{box-shadow:0 1px 0 #12813A,0 4px 10px rgba(0,0,0,.25)}
 .credit{margin-top:16px;font-size:11px;font-weight:700;color:rgba(255,255,255,.72);
   text-shadow:0 1px 3px rgba(0,0,0,.5)}
+/* Narrow phones: compact all three plates rather than dropping the clock —
+   the time of day is half the point of the day/night cycle. */
+@media (max-width:440px){
+  #topbar{gap:5px;padding-left:7px;padding-right:7px}
+  #lvlwrap{padding:3px 4px 3px 9px;gap:6px}
+  #lvlbadge{width:33px;height:33px;font-size:15px;border-width:2.5px}
+  .xpcol{min-width:58px;gap:3px}
+  .xplab{font-size:9px}
+  .xpbar{height:8px}
+  .coin{padding:3px 9px 3px 3px;gap:5px}
+  .coin .ico{width:26px;height:26px;font-size:13px;border-width:2px}
+  .coin b{font-size:16px}
+  .tpill{padding:4px 8px;gap:4px;margin-top:1px}
+  .tpill span{font-size:12px}
+  .tpill b{font-size:12px}
+}
+@media (max-width:375px){
+  .xpcol{min-width:0;width:54px}
+  .xplab{font-size:8.5px;white-space:nowrap;overflow:hidden}
+}
+@media (max-width:340px){
+  .xpcol{width:42px}
+  .xplab{display:none}
+  .tpill span{display:none}
+}
+
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms !important;transition-duration:.01ms !important}}
 </style>
 
@@ -578,7 +609,7 @@ const GOALS=[
 
 /* ---------------------------------------------------------------- save */
 const KEY='fredis_farm_v1';
-const BUILD='15';                     /* bump on every publish, shown in settings */
+const BUILD='18';                     /* bump on every publish, shown in settings */
 let S=null;
 function fresh(){
   return {
@@ -1653,7 +1684,18 @@ function updateSun(){
   SUN.tint=tint;
   SUN.mul=(SUN.gold*0.85+SUN.night*0.82)>0.02?1:0;
   SUN.lit=SUN.night>0.35;                       /* windows and lamps come on */
+  /* keep the page behind the canvas the same colour as the ground at this hour,
+     so a sliver the canvas cannot reach never reads as a band */
+  const gr=Math.round(95*tint[0]/255), gg=Math.round(168*tint[1]/255), gb=Math.round(66*tint[2]/255);
+  if(Math.abs(gr-PAGE_BG[0])>3||Math.abs(gg-PAGE_BG[1])>3||Math.abs(gb-PAGE_BG[2])>3){
+    PAGE_BG=[gr,gg,gb];
+    const css='rgb('+gr+','+gg+','+gb+')';
+    document.documentElement.style.backgroundColor=css;
+    if(document.body) document.body.style.backgroundColor=css;
+    cv.style.backgroundColor=css;
+  }
 }
+let PAGE_BG=[-9,-9,-9];
 /* The horizon is a real place in the world, not a line pinned to the screen.
    Anchoring it to a depth far behind the property means the hills, the town and
    the grass all move and scale together when you zoom or pan — pinning it was
@@ -2618,7 +2660,8 @@ function refreshHUD(){
   $('coins').textContent=fmt(S.coins);
   $('lvlbadge').textContent=S.level;
   const need=xpNeed(S.level);
-  $('xplab').textContent=fmt(S.xp)+' / '+fmt(need)+' ניסיון';
+  /* the word does not fit next to the clock on a narrow phone */
+  $('xplab').textContent=fmt(S.xp)+' / '+fmt(need)+(innerWidth>440?' ניסיון':'');
   $('xpfill').style.width=clamp(S.xp/need*100,0,100)+'%';
   const rdy=S.plots.filter(p=>p.i<S.owned&&p.sid&&now()>=p.at+p.dur).length;
   const dry=S.plots.filter(p=>p.i<S.owned&&p.sid&&!p.wet&&now()<p.at+p.dur).length;
