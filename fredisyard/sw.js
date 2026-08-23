@@ -1,14 +1,18 @@
 /* Service worker for החצר של פרדי.
    The whole game is one HTML file, so caching it means the game opens and plays
    with no connection at all after the first visit. */
-const CACHE = 'fredisyard-v18';
+const CACHE = 'fredisyard-v19';
 const CORE = [
   './',
   './index.html',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',
-  './preview.jpg'
+  './preview.jpg',
+  './f-fredoka-he.woff2',
+  './f-fredoka-la.woff2',
+  './f-rubik-he.woff2',
+  './f-rubik-la.woff2'
 ];
 
 self.addEventListener('install', e => {

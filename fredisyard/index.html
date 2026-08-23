@@ -22,10 +22,22 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="החצר של פרדי">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Rubik:wght@400;500;600;700;800;900&display=swap">
 <style>
+/* Self-hosted fonts. Google Fonts was the last network dependency: inside a
+   packaged app, or on a phone with no signal, the first paint fell back to
+   Arial. Same variable faces, Hebrew + Latin subsets only, 83KB total. */
+@font-face{font-family:'Fredoka';font-style:normal;font-weight:300 700;font-display:swap;
+  src:url(f-fredoka-he.woff2) format('woff2');
+  unicode-range:U+0307-0308,U+0590-05FF,U+200C-2010,U+20AA,U+25CC,U+FB1D-FB4F}
+@font-face{font-family:'Fredoka';font-style:normal;font-weight:300 700;font-display:swap;
+  src:url(f-fredoka-la.woff2) format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Rubik';font-style:normal;font-weight:300 900;font-display:swap;
+  src:url(f-rubik-he.woff2) format('woff2');
+  unicode-range:U+0307-0308,U+0590-05FF,U+200C-2010,U+20AA,U+25CC,U+FB1D-FB4F}
+@font-face{font-family:'Rubik';font-style:normal;font-weight:300 900;font-display:swap;
+  src:url(f-rubik-la.woff2) format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 :root{
   --sky1:#4FC3E8; --sky2:#8FDCF3; --sky3:#C8EFDF;
   --grass:#5FB53F; --grass2:#4A9A31;
@@ -83,8 +95,12 @@ body{position:fixed;inset:0;width:100%;
 /* ============================================================ hud */
 .hud{position:fixed;z-index:10;pointer-events:none}
 .hud>*{pointer-events:auto}
-#topbar{top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;
-  padding:calc(9px + env(safe-area-inset-top)) 11px 0 11px;gap:10px}
+#topbar{top:0;left:0;right:0;position:fixed;display:flex;justify-content:space-between;
+  align-items:flex-start;padding:calc(8px + env(safe-area-inset-top)) 11px 0 11px;gap:10px}
+/* the clock is centred on the screen, not wedged between two plates of
+   different widths, so it reads as the game's own clock */
+.tpill{position:absolute;left:50%;transform:translateX(-50%);
+  top:calc(9px + env(safe-area-inset-top))}
 
 .plate{background:linear-gradient(#FFFDF6,#FFE7BE);border:3px solid var(--wood-x);
   border-radius:999px;display:flex;align-items:center;gap:9px;
@@ -98,7 +114,7 @@ body{position:fixed;inset:0;width:100%;
 .coin b{font-family:var(--disp);font-weight:600;font-size:20px;color:var(--ink);
   font-variant-numeric:tabular-nums;letter-spacing:.2px}
 
-.tpill{padding:5px 13px;align-self:center;margin-top:2px;gap:6px}
+.tpill{padding:4px 12px;gap:6px;z-index:2}
 .tpill span{font-size:15px;line-height:1}
 .tpill b{font-family:var(--disp);font-weight:600;font-size:14px;color:var(--ink);
   font-variant-numeric:tabular-nums}
@@ -155,16 +171,16 @@ body{position:fixed;inset:0;width:100%;
   transition:width .4s cubic-bezier(.3,1.4,.5,1)}
 
 /* dock */
-#dock{bottom:0;left:0;right:0;display:flex;justify-content:center;gap:7px;
-  padding:0 10px calc(9px + env(safe-area-inset-bottom)) 10px}
-.dbtn{position:relative;width:67px;height:68px;border-radius:18px;
+#dock{bottom:0;left:0;right:0;display:flex;justify-content:center;gap:6px;
+  padding:0 8px calc(4px + env(safe-area-inset-bottom)) 8px}
+.dbtn{position:relative;width:63px;height:56px;border-radius:15px;
   background:linear-gradient(#FFFDF6,#FFE2B2);border:3px solid var(--wood-x);
   box-shadow:0 5px 0 rgba(94,58,24,.6),0 9px 18px rgba(0,0,0,.26),inset 0 2px 0 rgba(255,255,255,.9);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-  font-family:var(--disp);font-weight:600;font-size:11px;color:var(--ink);cursor:pointer;
+  font-family:var(--disp);font-weight:600;font-size:9.5px;color:var(--ink);cursor:pointer;
   transition:transform .09s ease,box-shadow .09s ease}
 .dbtn:active{transform:translateY(4px);box-shadow:0 1px 0 rgba(94,58,24,.6),0 4px 9px rgba(0,0,0,.22)}
-.dbtn svg{width:28px;height:28px;display:block;filter:drop-shadow(0 1px 0 rgba(0,0,0,.18))}
+.dbtn svg{width:24px;height:24px;display:block;filter:drop-shadow(0 1px 0 rgba(0,0,0,.18))}
 .dbtn .dot{position:absolute;top:-7px;left:-7px;min-width:23px;height:23px;padding:0 5px;
   border-radius:999px;background:linear-gradient(#FF7A6B,#E23F2E);border:2.5px solid #fff;color:#fff;
   font-family:var(--disp);font-weight:600;font-size:12px;display:none;align-items:center;
@@ -173,9 +189,9 @@ body{position:fixed;inset:0;width:100%;
 .dbtn.has .dot{display:flex}
 .dbtn:focus-visible{outline:3px solid #fff;outline-offset:2px}
 
-#quick{position:fixed;z-index:10;left:0;right:0;bottom:calc(92px + env(safe-area-inset-bottom));
+#quick{position:fixed;z-index:10;left:0;right:0;bottom:calc(72px + env(safe-area-inset-bottom));
   display:flex;justify-content:center;gap:8px;pointer-events:none;flex-wrap:wrap;padding:0 10px}
-.qbtn{pointer-events:auto;border-radius:999px;padding:10px 20px;font-size:14px;
+.qbtn{pointer-events:auto;border-radius:999px;padding:8px 17px;font-size:13px;
   display:none;align-items:center;gap:7px}
 .qbtn.on{display:inline-flex}
 
@@ -463,6 +479,185 @@ body.pre .hud,body.pre #quick{opacity:0;pointer-events:none}
 </div></div>
 
 <script>
+/* ============================================================== native.js
+   The bridge between the web game and the packaged iOS/Android app.
+
+   Deliberately written to need ZERO changes inside game.js. It loads first,
+   patches a few globals, and then gets out of the way. On the web (GitHub
+   Pages, the artifact, a plain browser) every branch here is skipped, so the
+   published site behaves exactly as before.
+
+   What it does under Capacitor:
+     1. Mirrors the save into native Preferences. WKWebView localStorage is
+        evictable — iOS can and does clear it under storage pressure, which
+        would wipe a farm someone tended for months. Preferences is real
+        native storage that only goes away when the app is deleted.
+     2. Haptics on every juicy button, so taps feel like a native game.
+     3. Routes the WhatsApp share link into the system share sheet.
+     4. Hides the native splash and paints the status bar to match the sky.
+     5. Exposes window.NATIVE.harvestReminder(ms) for a local notification
+        when the slowest plot finishes. game.js does not call it yet — see
+        README-ios.md for the one line that turns it on.
+   ------------------------------------------------------------------------ */
+(function(){
+  'use strict';
+
+  var KEY = 'fredis_farm_v1';          /* must match game.js */
+  var CAP = window.Capacitor;
+  var NATIVE = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform());
+
+  function plugin(n){
+    return (CAP && CAP.Plugins && CAP.Plugins[n]) || null;
+  }
+
+  /* window.NATIVE exists on the web too, with every method a safe no-op, so
+     game.js can call it unconditionally once it is wired up. */
+  var api = window.NATIVE = {
+    on: NATIVE,
+    platform: NATIVE ? CAP.getPlatform() : 'web',
+    tap: function(){}, thud: function(){}, cheer: function(){},
+    share: function(url){ return webShare(url); },
+    harvestReminder: function(){}, clearReminders: function(){}
+  };
+
+  /* ------------------------------------------------------------- web share */
+  function webShare(url){
+    if(navigator.share) return navigator.share({title:'החצר של פרדי', url:url}).catch(function(){});
+    window.open('https://wa.me/?text='+encodeURIComponent(url), '_blank');
+    return Promise.resolve();
+  }
+
+  if(!NATIVE) return;                  /* everything past here is app-only */
+
+  /* --------------------------------------------------- 1. durable savegame */
+  var Prefs = plugin('Preferences');
+  if(Prefs){
+    /* Mirror every write. Throttled: the game autosaves often and a native
+       round trip per write would be wasteful. */
+    var pending = null, timer = 0;
+    var rawSet = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(k, v){
+      rawSet.call(this, k, v);
+      if(this === window.localStorage && k === KEY){
+        pending = v;
+        if(!timer) timer = setTimeout(flush, 1500);
+      }
+    };
+    function flush(){
+      timer = 0;
+      if(pending == null) return;
+      var v = pending; pending = null;
+      Prefs.set({key:KEY, value:v}).catch(function(){});
+    }
+    /* Never lose the last few seconds when the app is backgrounded. */
+    document.addEventListener('visibilitychange', function(){
+      if(document.visibilityState === 'hidden'){ clearTimeout(timer); flush(); }
+    });
+
+    var rawRemove = Storage.prototype.removeItem;
+    Storage.prototype.removeItem = function(k){
+      rawRemove.call(this, k);
+      if(this === window.localStorage && k === KEY){
+        pending = null; clearTimeout(timer); timer = 0;
+        Prefs.remove({key:KEY}).catch(function(){});
+      }
+    };
+
+    /* Recovery. If localStorage came up empty but native storage still holds a
+       farm, iOS evicted the web storage — put it back and reload once. The
+       guard flag keeps this from ever becoming a boot loop. */
+    if(!localStorage.getItem(KEY) && !sessionStorage.getItem('nat_restored')){
+      Prefs.get({key:KEY}).then(function(r){
+        if(r && r.value){
+          sessionStorage.setItem('nat_restored','1');
+          rawSet.call(localStorage, KEY, r.value);
+          location.reload();
+        }
+      }).catch(function(){});
+    }
+  }
+
+  /* ---------------------------------------------------------- 2. haptics */
+  var Haptics = plugin('Haptics');
+  if(Haptics){
+    api.tap   = function(){ Haptics.impact({style:'LIGHT'}).catch(function(){}); };
+    api.thud  = function(){ Haptics.impact({style:'MEDIUM'}).catch(function(){}); };
+    api.cheer = function(){ Haptics.notification({type:'SUCCESS'}).catch(function(){}); };
+
+    /* Every button in the game carries .j — one listener covers the lot, and
+       new buttons get it for free. */
+    document.addEventListener('pointerdown', function(e){
+      var b = e.target && e.target.closest && e.target.closest('.j');
+      if(b && !b.disabled) api.tap();
+    }, {passive:true, capture:true});
+  }
+
+  /* ----------------------------------------------------- 3. system share */
+  var Share = plugin('Share');
+  if(Share){
+    api.share = function(url){
+      return Share.share({title:'החצר של פרדי', text:'בוא לגדל איתי חצר', url:url})
+                  .catch(function(){});
+    };
+  }
+  /* game.js renders the share as a plain wa.me link. Catch the click before
+     the WebView tries to navigate away and hand it to the share sheet. */
+  document.addEventListener('click', function(e){
+    var a = e.target && e.target.closest && e.target.closest('a[href*="wa.me"]');
+    if(!a) return;
+    e.preventDefault();
+    var m = /text=([^&]+)/.exec(a.getAttribute('href')||'');
+    api.share(m ? decodeURIComponent(m[1]) : 'https://ilayfredi.github.io/fredisyard/');
+  }, true);
+
+  /* ------------------------------------------- 4. status bar and splash */
+  var Bar = plugin('StatusBar');
+  if(Bar){
+    Bar.setOverlaysWebView({overlay:true}).catch(function(){});
+    Bar.setStyle({style:'LIGHT'}).catch(function(){});   /* light text on sky */
+  }
+  var Splash = plugin('SplashScreen');
+  if(Splash){
+    /* Wait for the first real frame, not just DOMContentLoaded, or the game
+       shows a blank green field for a beat. */
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        setTimeout(function(){ Splash.hide().catch(function(){}); }, 120);
+      });
+    });
+  }
+
+  /* -------------------------------------------- 5. harvest notification */
+  var Notes = plugin('LocalNotifications');
+  if(Notes){
+    var ID = 4201;
+    api.clearReminders = function(){
+      return Notes.cancel({notifications:[{id:ID}]}).catch(function(){});
+    };
+    /* whenMs = absolute epoch time the last plot finishes. Called again on
+       every plant/harvest, so the reminder always tracks the real farm. */
+    api.harvestReminder = function(whenMs){
+      if(!whenMs || whenMs - Date.now() < 60000) return api.clearReminders();
+      return Notes.checkPermissions().then(function(p){
+        if(p.display !== 'granted') return Notes.requestPermissions();
+        return p;
+      }).then(function(p){
+        if(p.display !== 'granted') return;
+        return Notes.cancel({notifications:[{id:ID}]}).catch(function(){}).then(function(){
+          return Notes.schedule({notifications:[{
+            id: ID,
+            title: 'החצר של פרדי',
+            body: 'התפרחות בשלות. זמן לקצור 🌿',
+            schedule: {at: new Date(whenMs)},
+            smallIcon: 'ic_stat_icon'
+          }]});
+        });
+      }).catch(function(){});
+    };
+  }
+})();
+</script>
+<script>
 /* החצר של פרדי — a farming game in Fredi's back yard. Canvas 2D isometric. */
 (function(){
 "use strict";
@@ -609,7 +804,7 @@ const GOALS=[
 
 /* ---------------------------------------------------------------- save */
 const KEY='fredis_farm_v1';
-const BUILD='18';                     /* bump on every publish, shown in settings */
+const BUILD='19';                     /* bump on every publish, shown in settings */
 let S=null;
 function fresh(){
   return {
@@ -892,17 +1087,23 @@ addEventListener('resize',resize);
 
 /* Frame the whole property — including how tall the house has grown — so the
    roof never runs off the top of the screen at the bigger upgrades. */
+/* The bar at the top and the dock at the bottom cover real screen. Frame the
+   property inside what is actually left, so nothing important sits under them. */
+const CHROME_TOP=58, CHROME_BOT=84;
 function fitCam(){
   const b=yardB(), h=houseAt();
   const houseH=46*h.L.fl+h.L.roofH+46;
   const top=iso(h.gx,h.gy).y-houseH;
   const bottom=iso(b.x1,b.y1).y+70;
-  const left=iso(b.x0,b.y1).x-150;
-  const right=iso(b.x1,b.y0).x+230;
+  const left=iso(b.x0,b.y1).x-105;
+  const right=iso(b.x1,b.y0).x+165;
+  const availH=Math.max(220, VH-CHROME_TOP-CHROME_BOT);
   const wNeed=Math.max(320,right-left), hNeed=Math.max(240,bottom-top);
+  cam.tz=cam.z=clamp(Math.min(VW/wNeed, availH/hNeed)*0.97, 0.30, 1.45);
   cam.x=(left+right)/2;
-  cam.y=(top+bottom)/2;
-  cam.tz=cam.z=clamp(Math.min(VW/wNeed, VH/hNeed)*0.94, 0.30, 1.45);
+  const midWorld=(top+bottom)/2;
+  const midBand=CHROME_TOP+availH/2;
+  cam.y=midWorld+(VH*0.52-midBand)/cam.tz;
 }
 const w2s=(wx,wy)=>({x:(wx-cam.x)*cam.z+VW/2, y:(wy-cam.y)*cam.z+VH*0.52});
 function s2w(sx,sy){ return {x:(sx-VW/2)/cam.z+cam.x, y:(sy-VH*0.52)/cam.z+cam.y}; }
@@ -1023,15 +1224,22 @@ const SPR=new Map();
 const SPRW=170, SPRH=200, BUCKETS=16;
 /* a mature plant should read as roughly one tile wide, not swallow its neighbours */
 const PSCALE=0.58;
-function sprite(st,bk){
-  const key=st.id+'#'+bk;
+/* Sprites are baked at the resolution they will actually be shown at, keyed by a
+   zoom step. A single fixed-size sprite was either blurry when zoomed in or
+   mushy when zoomed out; this keeps plants crisp at any distance. */
+const zStep=()=>clamp(Math.round(cam.z*4),1,7);
+function sprite(st,bk,zq){
+  zq=zq||zStep();
+  const key=st.id+'#'+bk+'#'+zq;
   let s=SPR.get(key);
   if(s) return s;
-  if(SPR.size>90) SPR.clear();
+  if(SPR.size>150) SPR.clear();
+  const scale=clamp((zq/4)*PSCALE*DPR*1.15, 0.34, 2.4);
   const c=document.createElement('canvas');
-  c.width=Math.round(SPRW*1.4); c.height=Math.round(SPRH*1.4);
-  const x=c.getContext("2d");
-  x.scale(1.4,1.4); x.translate(SPRW/2,SPRH-14);
+  c.width=Math.max(8,Math.round(SPRW*scale));
+  c.height=Math.max(8,Math.round(SPRH*scale));
+  const x=c.getContext('2d');
+  x.scale(scale,scale); x.translate(SPRW/2,SPRH-14);
   drawPlant(x,bk/(BUCKETS-1),st);
   SPR.set(key,c);
   return c;
@@ -1623,7 +1831,7 @@ function drawFX(dt){
     } else if(p.k==='plant'){
       const e=1-Math.pow(1-u,3);
       ctx.globalAlpha=(1-u)*0.9;
-      const spr=sprite(p.st,BUCKETS-1);
+      const spr=sprite(p.st,BUCKETS-1,zStep());
       const k=cam.z*PSCALE*(1+e*0.55);
       ctx.translate(p.x,p.y+10*cam.z-e*26*cam.z);
       ctx.drawImage(spr,-SPRW*k/2,-SPRH*k+14*cam.z,SPRW*k,SPRH*k);
@@ -2145,6 +2353,38 @@ function scene(dt){
   tree(YB2.x0-2.6,YB2.y0-1.0,3); tree(YB2.x0-2.2,YB2.y1+2.2,11);
   tree(YB2.x1+2.6,YB2.y1+2.0,23); tree(CX+1.5,YB2.y0-3.4,41); tree(YB2.x1+2.4,YB2.y0-2.6,57);
   push(PS.fredi[0],PS.fredi[1],(s,z)=>{ ctx.save(); ctx.translate(s.x,s.y); fredi(ctx,z,T); ctx.restore(); });
+  /* A band of scrub in front of the property. Without it the bottom of the
+     screen was flat empty grass with the dock sitting on it; now the view runs
+     into foreground planting and the UI reads as being over a place. */
+  for(let i=0;i<26;i++){
+    const t=i/25;
+    const gx=YB2.x0-2.5+t*(YB2.x1-YB2.x0+5)+ (hash(i*17)-0.5)*1.1;
+    const gy=YB2.y1+1.4+hash(i*29)*2.6;
+    const sd=i*13+7;
+    push(gx,gy,(s,z)=>{
+      ctx.save(); ctx.translate(s.x,s.y);
+      ctx.rotate(windAt(gx,gy)*0.02);
+      const k=(0.55+hash(sd)*0.7)*z;
+      ctx.fillStyle='rgba(0,0,0,.16)';
+      ctx.beginPath(); ctx.ellipse(0,0,26*k,10*k,0,0,TAU); ctx.fill();
+      const dk=hash(sd*3)>0.5;
+      ctx.fillStyle=dk?'#3C8A32':'#4E9E3A';
+      for(let b=0;b<5;b++){
+        const a=(b/5)*TAU+sd;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a)*11*k,-10*k+Math.sin(a)*5*k,(8+hash(sd+b)*4)*k,0,TAU);
+        ctx.fill();
+      }
+      ctx.fillStyle=dk?'#5CB645':'#6CC44E';
+      for(let b=0;b<3;b++){
+        const a=(b/3)*TAU+sd*0.7;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a)*7*k,-14*k+Math.sin(a)*3*k,(6+hash(sd+b*5)*3)*k,0,TAU);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
   for(const d of decorPlacements())
     push(d.gx,d.gy,(s,z)=>{ ctx.save(); ctx.translate(s.x,s.y); drawDecor(ctx,z,d.kind,d.seed); ctx.restore(); });
   hensUpdate();
@@ -2175,6 +2415,14 @@ function scene(dt){
     ctx.restore();
   }
   drawNightLights();
+
+  /* settle the very bottom into shade so the dock sits on ground rather than on
+     a flat band of grass */
+  const vg=ctx.createLinearGradient(0,VH-150,0,VH);
+  vg.addColorStop(0,'rgba(16,52,22,0)');
+  vg.addColorStop(0.55,'rgba(16,52,22,.13)');
+  vg.addColorStop(1,'rgba(16,52,22,.34)');
+  ctx.fillStyle=vg; ctx.fillRect(0,VH-150,VW,150);
 
   for(const it of items){ if(it.plot) drawBadge(it.plot); }
   butterflies();
@@ -3115,7 +3363,8 @@ function frame(t){
   cam.z=lerp(cam.z,cam.tz,1-Math.pow(0.002,dt));
   resizeIfNeeded();
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  ctx.imageSmoothingQuality='low';   /* downscaling 100+ plant sprites adds up */
+  /* sprites are now baked near 1:1, so keep resampling sharp */
+  ctx.imageSmoothingQuality='high';
   scene(dt);
   autoRes(dt);
   acc+=dt;
