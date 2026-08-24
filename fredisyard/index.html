@@ -877,7 +877,7 @@ const GOALS=[
 
 /* ---------------------------------------------------------------- save */
 const KEY='fredis_farm_v1';
-const BUILD='22';                    /* bump on every publish, shown in settings */
+const BUILD='23';                    /* bump on every publish, shown in settings */
 const SAVE_V=2;                      /* save schema; normalize() upgrades in place */
 const TUT_DONE=99;                   /* tutorial step meaning "finished" */
 let S=null;
@@ -1205,8 +1205,8 @@ const FIELD=iso(CX,CY);
 /* one travelling gust so the whole field ripples together instead of each
    plant jittering on its own clock */
 function windAt(gx,gy){
-  const gust=0.55+0.45*Math.sin(T*0.37)*Math.sin(T*0.19+1.1);
-  const ph=T*1.25-(gx+gy)*0.30;
+  const gust=(0.55+0.45*Math.sin(T*0.37)*Math.sin(T*0.19+1.1))*(1+WX.i*1.5);
+  const ph=T*(1.25+WX.i*0.9)-(gx+gy)*0.30;
   return (Math.sin(ph)*0.7+Math.sin(ph*1.9+0.7)*0.3)*gust;
 }
 
@@ -1248,7 +1248,7 @@ function fitCam(){
   /* the house now sits off to one side, so it sets the left edge of the frame
      as well as the top one */
   const top=Math.min(iso(b.x0,b.y0).y-60, iso(h.gx,h.gy).y-houseH);
-  const bottom=(streetK()+1.9)*TH/2;   /* room for the pavement and whoever is on it */
+  const bottom=(roadK()+2.4)*TH/2;   /* room for the pavement, the road and the traffic */
   const left=Math.min(iso(b.x0,b.y1).x-105, iso(h.gx-h.A*0.5,h.gy+h.B*0.5).x-45);
   const right=iso(b.x1,b.y0).x+165;
   const availH=Math.max(220, VH-CHROME_TOP-CHROME_BOT);
@@ -1260,7 +1260,7 @@ function fitCam(){
      sky rather than on an empty apron of grass below the street, so sit the
      property low in the band instead of dead centre. */
   const slack=Math.max(0, availH-(bottom-top)*cam.tz);
-  const midBand=CHROME_TOP+availH/2+slack*0.30;
+  const midBand=CHROME_TOP+availH/2+slack*0.44;
   cam.y=midWorld+(VH*0.52-midBand)/cam.tz;
 }
 const w2s=(wx,wy)=>({x:(wx-cam.x)*cam.z+VW/2, y:(wy-cam.y)*cam.z+VH*0.52});
@@ -1546,19 +1546,72 @@ const mul=(a,k)=>[a[0]*k,a[1]*k];
 
 /* Sun-relative ground shadow: direction swings with the hour, length grows as
    the sun drops. Gives every solid a sense of sitting on the ground. */
+/* Where the sun throws a shadow at this hour. Short, dark and tight under the
+   object at noon; long, pale and stretched east or west at the ends of the day;
+   almost gone after dark. Everything that stands up goes through this, so the
+   whole yard turns together as the day passes. */
+/* ux and uy are how far the shadow travels per unit of object height, so a tall
+   house throws a long one and a gnome throws a short one from the same sun. */
 function shadowVec(){
-  const alt=Math.max(0.16,SUN.alt);
+  const alt=Math.max(0.14,SUN.alt);
   const day=clamp((SUN.h-6)/12,0,1);
-  return {dx:(0.5-day)*2.4/alt*0.30, dy:0.36/alt*0.30, a:0.10+0.16*clamp(alt,0,1)};
+  /* how many object-heights the shadow reaches: the cotangent of the sun */
+  const len=clamp(0.30/alt,0.30,2.2);
+  /* and which way. +1 at sunrise, 0 at noon, -1 at sunset — keep this as pure
+     direction, never as magnitude, or the shadow shrinks to nothing all day. */
+  const dir=Math.cos(Math.PI*day);
+  return {
+    ux:dir*len*1.8,
+    uy:0.22*len+0.10,
+    len,
+    /* no sun, no shadow: an overcast sky flattens the whole yard */
+    a:(0.09+0.17*clamp(SUN.alt,0,1))*(1-SUN.night*0.80)*(1-WX.i*0.88)
+  };
 }
+/* One pool that starts at the object's feet and runs away from the sun, rather
+   than a disc that teleports sideways and leaves the object floating. */
 function castShadow(c,w,h,height,z){
   const s=shadowVec();
+  if(s.a<0.012) return;
+  const ox=s.ux*height*z, oy=s.uy*height*z;
+  const d=Math.hypot(ox,oy);
+  c.save();
+  c.globalAlpha=s.a;
+  c.fillStyle='#12340C';
+  c.translate(ox*0.5,oy*0.5);
+  c.rotate(Math.atan2(oy,ox));
+  c.beginPath();
+  c.ellipse(0,0,w*z*0.5+d*0.5,h*z*0.5,0,0,TAU);
+  c.fill();
+  c.restore();
+}
+/* The house is too big to fake with an ellipse: project the footprint away from
+   the sun and fill the hull of both copies, so the shadow has the shape of the
+   building that cast it. Points are local to the house origin. */
+function hull(pts){
+  const p=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[],up=[];
+  for(const q of p){ while(lo.length>1&&cross(lo[lo.length-2],lo[lo.length-1],q)<=0) lo.pop(); lo.push(q); }
+  for(let i=p.length-1;i>=0;i--){ const q=p[i];
+    while(up.length>1&&cross(up[up.length-2],up[up.length-1],q)<=0) up.pop(); up.push(q); }
+  lo.pop(); up.pop();
+  return lo.concat(up);
+}
+function castHullShadow(c,foot,height,z){
+  const s=shadowVec();
+  if(s.a<0.012) return;
+  const ox=s.ux*height*z, oy=s.uy*height*z;
+  const pts=foot.concat(foot.map(p=>[p[0]+ox,p[1]+oy]));
+  const hl=hull(pts);
+  if(hl.length<3) return;
   c.save();
   c.globalAlpha=s.a;
   c.fillStyle='#12340C';
   c.beginPath();
-  c.ellipse(s.dx*height*z*0.5, s.dy*height*z*0.16, w*z*0.5, h*z*0.5, 0, 0, TAU);
-  c.fill();
+  c.moveTo(hl[0][0],hl[0][1]);
+  for(let i=1;i<hl.length;i++) c.lineTo(hl[i][0],hl[i][1]);
+  c.closePath(); c.fill();
   c.restore();
 }
 
@@ -1576,14 +1629,8 @@ function houseProp(c,z,t){
   const tO=add(O,up), tBR=add(BR,up), tBL=add(BL,up), tFAR=add(FAR,up);
 
   c.save();
-  /* centre the shadow on the footprint, not the near corner, or it reads as a
-     dark puddle sitting off to one side of the building */
-  {
-    const fc=mul(add(bu,bv),0.5);
-    c.save(); c.translate(fc[0],fc[1]);
-    castShadow(c,(A+B)*TW*(LV.wing?0.48:0.40),(A+B)*TH*(LV.wing?0.48:0.40),H/z*0.5,z);
-    c.restore();
-  }
+  /* the real silhouette of the building, thrown away from the sun */
+  castHullShadow(c,[O,add(O,bv),add(add(O,bu),bv),add(O,bu)],(H+LV.roofH*z)/z*0.80,z);
 
   const W1=LV.w1, W2=LV.w2, EDGE=LV.ed;
   const gradWall=(p0,p1,c0,c1)=>{
@@ -1775,6 +1822,7 @@ function houseProp(c,z,t){
     }
   }
   c.globalAlpha=1;
+  scaffold(c,z,bu,bv,H);
   c.restore();
 }
 /* The nameplate out front. Whoever walks past should be in no doubt whose yard
@@ -1937,12 +1985,14 @@ function treeProp(c,z,seed){
    black trousers, van dyke beard, toothpick, arms folded. Idles with a weight
    shift and a slow chew; throws a fist up when a harvest lands.
    Built on a four-head cartoon proportion: head 26 tall, torso 32, legs 38. */
-function fredi(c,z,t){
+function fredi(c,z,t,W){
   const j=FRED.jump;
+  const walking=!!(W&&W.on);
+  const sw=walking?Math.sin(W.ph):0;
   const hop=-Math.sin(j*Math.PI)*30*z;
-  const bob=Math.sin(t*1.5)*1.4*z+hop;
-  const shift=Math.sin(t*0.52)*2.2*z;
-  const lean=Math.sin(t*0.52)*0.03;
+  const bob=Math.sin(t*1.5)*1.4*z+hop-(walking?Math.abs(Math.sin(W.ph))*2.6*z:0);
+  const shift=walking?0:Math.sin(t*0.52)*2.2*z;
+  const lean=walking?0.05:Math.sin(t*0.52)*0.03;
   const chew=Math.sin(t*5.2);
   const look=Math.sin(t*0.31)*0.085;
   const cheer=clamp(j*1.7,0,1);
@@ -1956,16 +2006,22 @@ function fredi(c,z,t){
 
   c.save();
   castShadow(c,50,20,92,z);
-  c.translate(shift,bob);
-  c.rotate(lean*0.3);
+  if(W&&W.face<0) c.scale(-1,1);
+  /* stooping over a plot with the watering can */
+  const stoop=(W&&W.act>0)?W.act:0;
+  c.translate(shift,bob+stoop*5*z);
+  c.rotate(lean*0.3+stoop*0.20);
 
-  /* legs, short and planted */
+  /* legs, short and planted — they swing when he is actually going somewhere */
   for(const s of [-1,1]){
     const lx=s*7*z;
+    c.save();
+    if(walking){ c.translate(lx,HIP); c.rotate((s>0?sw:-sw)*0.44); c.translate(-lx,-HIP); }
     c.fillStyle=s<0?PANT_D:PANT;
     roundPoly(c,[[lx-7.5*z,HIP],[lx+7.5*z,HIP],[lx+6*z,-5*z],[lx-6*z,-5*z]],5*z); c.fill();
     c.fillStyle='#3B2F26';
     roundPoly(c,[[lx-7*z,-6.5*z],[lx+8.5*z,-6.5*z],[lx+8.5*z,0],[lx-7*z,0]],3*z); c.fill();
+    c.restore();
   }
 
   /* torso: vest tapering from broad shoulders to the waist */
@@ -2091,8 +2147,199 @@ function fredi(c,z,t){
   roundPoly(c,[[0,-0.8*z],[11*z,-1.3*z],[11*z,0.3*z],[0,0.8*z]],0.6*z); c.fill();
   c.restore();
 
+  /* the watering can, only out when he is actually watering something */
+  if(stoop>0.02){
+    c.save();
+    c.translate(17*z,-24*z); c.rotate(0.5+stoop*0.5);
+    c.globalAlpha=Math.min(1,stoop*2);
+    c.fillStyle='#5FA8C8';
+    roundPoly(c,[[-8*z,-9*z],[8*z,-9*z],[6.5*z,5*z],[-6.5*z,5*z]],2.6*z); c.fill();
+    c.fillStyle='#4C8CA8';
+    roundPoly(c,[[6*z,-7*z],[19*z,-2*z],[20*z,1*z],[6*z,-3*z]],1.6*z); c.fill();
+    c.strokeStyle='#4C8CA8'; c.lineWidth=2.2*z;
+    c.beginPath(); c.arc(0,-10*z,6*z,Math.PI,TAU); c.stroke();
+    c.globalAlpha=1;
+    c.restore();
+    /* and the water landing on the plot in front of him */
+    if(stoop>0.6){
+      c.strokeStyle='rgba(126,206,236,.8)'; c.lineWidth=1.6*z; c.lineCap='round';
+      for(let i=0;i<5;i++){
+        const k=((T*1.5+i*0.2)%1);
+        c.globalAlpha=(1-k)*0.85;
+        const x=(38+k*16)*z, y=(-22+k*34)*z;
+        c.beginPath(); c.moveTo(x,y); c.lineTo(x+2*z,y+5*z); c.stroke();
+      }
+      c.globalAlpha=1;
+    }
+  }
+
   c.restore();
   c.restore();
+}
+/* --------------------------------------------------------------- coming back
+   Opening the game after a few hours should show you those hours, not just the
+   result of them: the sun crosses the sky, the shadows swing round, the crop
+   fills out and the street runs at speed. Then it settles on now. */
+const LAPSE={on:false, t:0, dur:3.6, h0:12, h1:12, ms:0, awayMs:0};
+function lapseStart(awayMs){
+  const d=new Date();
+  LAPSE.h1=d.getHours()+d.getMinutes()/60;
+  LAPSE.ms=Math.min(awayMs,10*3600000);          /* never sweep more than ten hours */
+  LAPSE.h0=LAPSE.h1-LAPSE.ms/3600000;
+  LAPSE.awayMs=awayMs;
+  LAPSE.on=true; LAPSE.t=0;
+}
+function lapseOffset(){
+  if(!LAPSE.on) return 0;
+  const e=lapseEase();
+  return -LAPSE.ms*(1-e);
+}
+function lapseEase(){
+  const u=clamp(LAPSE.t/LAPSE.dur,0,1);
+  return u*u*(3-2*u);
+}
+function lapseCard(){
+  const ms=LAPSE.awayMs, h=Math.floor(ms/3600000), m=Math.round((ms%3600000)/60000);
+  const when=h>0?(h+' שעות'+(m>4?(' ו-'+m+' דקות'):'')):(m+' דקות');
+  const ripe=S.plots.filter(p=>p.sid&&p.i<S.owned&&(now()-p.at)>=p.dur).length;
+  const bits=[];
+  if(ripe) bits.push(ripe+' שתילים הבשילו');
+  if(S.orders&&S.orders.length) bits.push(S.orders.length+' הזמנות מחכות');
+  celebrate('back','ברוך שובך!','היית בחוץ '+when+(bits.length?' · '+bits.join(' · '):''));
+}
+/* -------------------------------------------------------------- the builders
+   An upgrade you paid millions for should not just be a different picture next
+   frame. Scaffolding goes up around the house, there is banging and dust for a
+   second and a half, and then the poles drop away and the new place is there. */
+const BLD={t:-1, dur:2.3};
+function buildStart(){ BLD.t=0; }
+/* the fence is what you actually see when the land grows, so push it outward
+   over a second instead of teleporting it */
+const YRD={t:-1, dur:1.0, from:0};
+function yardGrow(fromR){ YRD.from=fromR; YRD.t=0; }
+function fenceB(){
+  if(YRD.t<0) return yardB();
+  const e=1-Math.pow(1-clamp(YRD.t/YRD.dur,0,1),3);
+  const r=lerp(YRD.from,yardR(),e);
+  return {x0:CX-r,x1:CX+r,y0:CY-r,y1:CY+r};
+}
+function buildUpdate(dt){
+  if(BLD.t>=0){ BLD.t+=dt; if(BLD.t>BLD.dur) BLD.t=-1; }
+  if(YRD.t>=0){
+    YRD.t+=dt;
+    if(YRD.t>YRD.dur) YRD.t=-1;
+    else {
+      /* turf breaking along the line the fence is moving to */
+      const b=fenceB();
+      for(let i=0;i<2;i++){
+        const t=Math.random(), side=(Math.random()*4)|0;
+        let gx,gy;
+        if(side===0){ gx=lerp(b.x0,b.x1,t); gy=b.y0; }
+        else if(side===1){ gx=b.x1; gy=lerp(b.y0,b.y1,t); }
+        else if(side===2){ gx=lerp(b.x0,b.x1,t); gy=b.y1; }
+        else { gx=b.x0; gy=lerp(b.y0,b.y1,t); }
+        const p=iso(gx,gy), s=w2s(p.x,p.y);
+        puff(s.x,s.y,'#C4A87A',1);
+      }
+    }
+  }
+}
+/* drawn inside houseProp, in the house's own local space */
+function scaffold(c,z,bu,bv,H){
+  if(BLD.t<0) return;
+  const u=BLD.t/BLD.dur;
+  /* up fast, hold, then collapse */
+  const k=u<0.12 ? u/0.12 : (u>0.80 ? Math.max(0,1-(u-0.80)/0.20) : 1);
+  if(k<=0.01) return;
+  const drop=(u>0.80)?(1-k)*40*z:0;
+  const shake=(u>0.14&&u<0.78)?Math.sin(BLD.t*46)*1.1*z:0;
+  const top=-(H+26*z)*k;
+  const corners=[[0,0],bv,[bu[0]+bv[0],bu[1]+bv[1]],bu];
+  c.save();
+  c.translate(shake,drop);
+  /* poles */
+  c.strokeStyle='#B08A4E'; c.lineWidth=3.4*z; c.lineCap='round';
+  for(const p of corners){
+    c.beginPath(); c.moveTo(p[0],p[1]); c.lineTo(p[0],p[1]+top); c.stroke();
+  }
+  /* planks at two working heights */
+  c.strokeStyle='#C79A5C'; c.lineWidth=4.6*z;
+  for(const f of [0.42,0.78]){
+    const y=top*f;
+    c.beginPath();
+    c.moveTo(corners[0][0],corners[0][1]+y);
+    c.lineTo(corners[1][0],corners[1][1]+y);
+    c.moveTo(corners[0][0],corners[0][1]+y);
+    c.lineTo(corners[3][0],corners[3][1]+y);
+    c.stroke();
+  }
+  /* diagonal bracing on the near face */
+  c.strokeStyle='rgba(176,138,78,.75)'; c.lineWidth=2.2*z;
+  c.beginPath();
+  c.moveTo(corners[0][0],corners[0][1]);
+  c.lineTo(corners[1][0],corners[1][1]+top*0.78);
+  c.moveTo(corners[0][0],corners[0][1]);
+  c.lineTo(corners[3][0],corners[3][1]+top*0.78);
+  c.stroke();
+  /* somebody up there is hitting something */
+  if(u>0.14&&u<0.78){
+    const n=Math.floor(BLD.t*11);
+    for(let i=0;i<2;i++){
+      const h=hash(n*7+i*13);
+      if(h<0.55) continue;
+      const side=hash(n*3+i)>0.5?1:3;
+      const px=lerp(corners[0][0],corners[side][0],0.3+hash(n*5+i)*0.5);
+      const py=lerp(corners[0][1],corners[side][1],0.3+hash(n*5+i)*0.5)+top*(hash(n*11+i)>0.5?0.42:0.78);
+      c.save();
+      c.globalCompositeOperation='lighter';
+      const g=c.createRadialGradient(px,py,1,px,py,16*z);
+      g.addColorStop(0,'rgba(255,236,168,.9)'); g.addColorStop(1,'rgba(255,236,168,0)');
+      c.fillStyle=g; c.beginPath(); c.arc(px,py,16*z,0,TAU); c.fill();
+      c.restore();
+    }
+  }
+  c.restore();
+}
+/* ------------------------------------------------------------------- Fredi
+   He is the face of the game and he was a shop fitting: bolted to one spot
+   behind the stall. Now he walks his own yard — checks a plot, waters it,
+   leans on the fence for a while, then heads back to the counter. */
+const FRD={gx:null, gy:0, tgx:0, tgy:0, st:'idle', t:1.5, ph:0, face:1, act:0};
+function frediUpdate(dt){
+  const home=propSpots().fredi;
+  if(FRD.gx===null){ FRD.gx=home[0]; FRD.gy=home[1]; FRD.tgx=home[0]; FRD.tgy=home[1]; }
+  FRD.t-=dt;
+  /* the watering stoop eases in and out rather than snapping */
+  const want=(FRD.st==='water')?1:0;
+  FRD.act+=(want-FRD.act)*Math.min(1,dt*3.4);
+
+  if(FRD.st==='walk'){
+    const dx=FRD.tgx-FRD.gx, dy=FRD.tgy-FRD.gy, d=Math.hypot(dx,dy);
+    if(d>0.10){
+      const sp=1.15;
+      FRD.gx+=dx/d*sp*dt; FRD.gy+=dy/d*sp*dt;
+      FRD.ph+=dt*7.5;
+      FRD.face=((dx-dy)>=0)?1:-1;        /* iso x is (gx-gy) */
+    } else {
+      FRD.st=pick(['water','water','look','rest','idle']);
+      FRD.t=2.5+Math.random()*4.5;
+      if(FRD.st==='water') FRD.t=3.5+Math.random()*3;
+    }
+  } else if(FRD.t<=0){
+    const b=yardB();
+    if(Math.random()<0.34){ FRD.tgx=home[0]; FRD.tgy=home[1]; }
+    else {
+      const owned=S.plots.filter(p=>p.i<S.owned);
+      if(owned.length){
+        const p=owned[(Math.random()*owned.length)|0];
+        FRD.tgx=p.gx-0.9; FRD.tgy=p.gy+0.9;
+      } else {
+        FRD.tgx=clamp(CX+(Math.random()-0.5)*4,b.x0+1,b.x1-1);
+        FRD.tgy=clamp(CY+(Math.random()-0.5)*4,b.y0+1,b.y1-1);
+      }
+    }
+    FRD.st='walk';
+  }
 }
 
 /* ---------------------------------------------------------------- particles */
@@ -2112,9 +2359,30 @@ function coinBurst(sx,sy,n){
   for(let i=0;i<n;i++) fx({k:'coin',x:sx,y:sy,tx:tg.x,ty:tg.y,life:0.62+hash(i*13)*0.26,
     ax:(hash(i*7)-0.5)*190, ay:-90-hash(i*3)*130, d:i*0.035, sp:hash(i*23)*TAU});
 }
-/* a ghost of the harvested plant, blooming outward as it fades */
+/* the cut plant tips over and slides away, rather than vanishing on the spot */
 function plantPop(sx,sy,st){
-  fx({k:'plant',x:sx,y:sy,st,life:0.5});
+  fx({k:'plant',x:sx,y:sy,st,life:0.55,dir:Math.random()<0.5?-1:1});
+}
+/* leaves torn loose by the cut, spinning and fluttering down */
+function leafBurst(sx,sy,st,n){
+  for(let i=0;i<n;i++) fx({k:'leaf',x:sx+(hash(i*7)-0.5)*26*cam.z, y:sy-(20+hash(i*3)*54)*cam.z,
+    vx:(hash(i*11)-0.5)*130, vy:-30-hash(i*5)*70, g:190+hash(i*13)*120,
+    r:(5+hash(i*17)*6)*Math.max(0.5,cam.z), rot:hash(i*19)*TAU, spin:(hash(i*23)-0.5)*11,
+    sw:0.7+hash(i*29)*1.4, sp:hash(i*31)*TAU, amp:(6+hash(i*37)*14)*cam.z,
+    col:hash(i*41)>0.6?st.leafD:st.leaf, life:0.9+hash(i*43)*0.7});
+}
+/* and the crop itself, thrown into a jar that flies to the barn */
+function barnTarget(){
+  const el=document.getElementById('bbarn');
+  if(!el) return {x:VW*0.5,y:VH-40};
+  const r=el.getBoundingClientRect();
+  return {x:r.left+r.width/2, y:r.top+r.height/2};
+}
+function jarFly(sx,sy,st){
+  const tg=barnTarget();
+  fx({k:'jar',x:sx,y:sy-40*cam.z,tx:tg.x,ty:tg.y,life:0.72,
+      ax:(Math.random()-0.5)*120, ay:-190-Math.random()*90,
+      sp:Math.random()*TAU, col:st.bud||st.leaf});
 }
 function puff(sx,sy,col,n){
   for(let i=0;i<n;i++) fx({k:'puff',x:sx,y:sy,col,life:0.5+hash(i)*0.3,
@@ -2138,12 +2406,12 @@ function confetti(n){
    going down in a menu — the screen has to say something happened out there. */
 let celeEl=null;
 function celebrate(kind,title,sub){
-  confetti(96);
+  if(kind!=='back') confetti(96);   /* paper for an upgrade, not for waking up */
   /* the camera pulls back a hair and eases forward again onto the new thing */
   cam.z=cam.tz*0.86;
   if(!celeEl){ celeEl=document.createElement('div'); celeEl.id='cele'; document.body.appendChild(celeEl); }
   celeEl.className=kind==='yard'?'green':'gold';
-  celeEl.innerHTML='<div class="ce-i">'+(kind==='yard'?'🌍':'🏠')+'</div>'+
+  celeEl.innerHTML='<div class="ce-i">'+(kind==='yard'?'🌍':kind==='back'?'🌅':'🏠')+'</div>'+
     '<div class="ce-t"></div><div class="ce-s"></div>';
   celeEl.querySelector('.ce-t').textContent=title;
   celeEl.querySelector('.ce-s').textContent=sub;
@@ -2178,11 +2446,14 @@ function drawFX(dt){
       ctx.globalAlpha*=0.7; ctx.fillStyle='#FFF0A8';
       ctx.beginPath(); ctx.ellipse(x-r*0.25,y-r*0.3,r*0.26,r*0.3,0,0,TAU); ctx.fill();
     } else if(p.k==='plant'){
-      const e=1-Math.pow(1-u,3);
-      ctx.globalAlpha=(1-u)*0.9;
+      /* pivot about the stump, so it reads as a stalk being cut through */
+      const e=1-Math.pow(1-u,2.2);
+      ctx.globalAlpha=(1-u)*0.95;
       const spr=sprite(p.st,BUCKETS-1,zStep());
-      const k=cam.z*PSCALE*(1+e*0.55);
-      ctx.translate(p.x,p.y+10*cam.z-e*26*cam.z);
+      const k=cam.z*PSCALE;
+      ctx.translate(p.x,p.y);
+      ctx.rotate(p.dir*e*1.2);
+      ctx.translate(p.dir*e*22*cam.z,e*10*cam.z);
       ctx.drawImage(spr,-SPRW*k/2,-SPRH*k+14*k,SPRW*k,SPRH*k);
     } else if(p.k==='ring'){
       /* a tap always answers, even when the tap does nothing else */
@@ -2202,6 +2473,34 @@ function drawFX(dt){
       ctx.fillStyle='#7FD3F0';
       const y=p.y+p.vy*u;
       ctx.beginPath(); ctx.ellipse(p.x,y,2.6*cam.z,6*cam.z,0,0,TAU); ctx.fill();
+    } else if(p.k==='leaf'){
+      const x=p.x+p.vx*u+Math.sin(u*p.sw*TAU+p.sp)*p.amp;
+      const y=p.y+p.vy*u+p.g*u*u;
+      ctx.globalAlpha=u>0.68?(1-u)/0.32:1;
+      ctx.translate(x,y); ctx.rotate(p.rot+u*p.spin);
+      /* a blade seen edge-on some of the time, the way a falling leaf turns */
+      ctx.scale(1,Math.max(0.18,Math.abs(Math.cos(u*p.sw*2.6+p.sp))));
+      ctx.fillStyle=p.col;
+      ctx.beginPath();
+      ctx.moveTo(-p.r,0);
+      ctx.quadraticCurveTo(0,-p.r*0.46,p.r,0);
+      ctx.quadraticCurveTo(0,p.r*0.46,-p.r,0);
+      ctx.fill();
+    } else if(p.k==='jar'){
+      const e=u*u*(3-2*u);
+      const fx0=p.x+p.ax*u, fy0=p.y+p.ay*u+560*u*u;
+      const x=lerp(fx0,p.tx,e*e), y=lerp(fy0,p.ty,e*e);
+      ctx.globalAlpha=u>0.86?(1-u)/0.14:1;
+      const k=Math.min(1.15,cam.z+0.45)*(1-e*0.30);
+      ctx.translate(x,y); ctx.rotate(Math.sin(u*7+p.sp)*0.34);
+      ctx.fillStyle='rgba(214,238,246,.9)';
+      roundPoly(ctx,[[-7*k,-9*k],[7*k,-9*k],[7*k,9*k],[-7*k,9*k]],3*k); ctx.fill();
+      ctx.fillStyle=p.col;
+      roundPoly(ctx,[[-5*k,-3*k],[5*k,-3*k],[5*k,7*k],[-5*k,7*k]],2.4*k); ctx.fill();
+      ctx.fillStyle='#B98A3C';
+      roundPoly(ctx,[[-8*k,-12*k],[8*k,-12*k],[8*k,-7*k],[-8*k,-7*k]],2*k); ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,.5)';
+      roundPoly(ctx,[[-5*k,-7*k],[-2.4*k,-7*k],[-2.4*k,6*k],[-5*k,6*k]],1.4*k); ctx.fill();
     } else if(p.k==='conf'){
       /* paper, not sparks: a rectangle tumbling on its own axis and drifting */
       const y=p.y+p.vy*u+p.g*u*u, x=p.x+p.vx*u+Math.sin(u*p.sw*TAU+p.sp)*16;
@@ -2254,8 +2553,15 @@ function updateSun(){
   let tint=[255,255,255];
   tint=mix3(tint,[255,206,152],SUN.gold*0.85);
   tint=mix3(tint,[86,108,168],SUN.night*0.82);
+  /* rain takes the colour out of the light and puts a lid on the sky */
+  if(WX.i>0.01){
+    SUN.sky=[mix3(SUN.sky[0],[46,56,68],WX.i*0.82),
+             mix3(SUN.sky[1],[80,90,102],WX.i*0.82),
+             mix3(SUN.sky[2],[118,126,134],WX.i*0.78)];
+    tint=mix3(tint,[126,140,158],WX.i*0.5);
+  }
   SUN.tint=tint;
-  SUN.mul=(SUN.gold*0.85+SUN.night*0.82)>0.02?1:0;
+  SUN.mul=(SUN.gold*0.85+SUN.night*0.82+WX.i)>0.02?1:0;
   SUN.lit=SUN.night>0.35;                       /* windows and lamps come on */
   /* keep the page behind the canvas the same colour as the ground at this hour,
      so a sliver the canvas cannot reach never reads as a band */
@@ -2269,6 +2575,123 @@ function updateSun(){
   }
 }
 let PAGE_BG=[-9,-9,-9];
+/* ----------------------------------------------------------------- weather
+   Rain is the one thing that says a yard is outdoors. The light drops, the
+   field goes dark and glossy, the wind picks up, and the screen fills with
+   motion that the player did not cause. It arrives on its own schedule. */
+const WX={mode:'clear', i:0, t:0, dur:0, next:120+Math.random()*300,
+          flash:0, bolt:null, boltT:8, rumble:0};
+const RAIN=[], SPLASH=[];
+let splashAcc=0;
+function newDrop(){
+  const far=Math.random();
+  return {x:Math.random()*(VW+180)-120, y:Math.random()*VH,
+          v:640+far*760, len:9+far*20, w:0.8+far*1.1, a:0.18+far*0.34};
+}
+function makeBolt(){
+  const pts=[[VW*(0.2+Math.random()*0.6),-10]];
+  let y=-10;
+  while(y<horizonY()-10){
+    y+=18+Math.random()*30;
+    pts.push([pts[pts.length-1][0]+(Math.random()-0.5)*46, y]);
+  }
+  return pts;
+}
+function wxUpdate(dt){
+  if(WX.mode==='clear'){
+    WX.i=Math.max(0,WX.i-dt*0.42);
+    WX.next-=dt;
+    if(WX.next<=0){ WX.mode='rain'; WX.t=0; WX.dur=40+Math.random()*90; }
+  } else {
+    WX.t+=dt;
+    /* fade in, hold, fade out over the last ten seconds */
+    const out=clamp((WX.dur-WX.t)/10,0,1);
+    WX.i=Math.min(out,Math.min(1,WX.i+dt*0.3));
+    if(WX.t>WX.dur){ WX.mode='clear'; WX.next=240+Math.random()*600; }
+    WX.boltT-=dt;
+    if(WX.boltT<=0 && WX.i>0.62){
+      WX.flash=1; WX.rumble=1; WX.boltT=7+Math.random()*18;
+      WX.bolt=makeBolt();
+    }
+  }
+  if(WX.flash>0) WX.flash-=dt*3.4;
+  if(WX.rumble>0) WX.rumble-=dt*0.5;
+
+  /* the drop pool tracks the intensity, so a shower costs nothing when dry */
+  const want=Math.round(WX.i*(VW>520?190:130));
+  while(RAIN.length<want) RAIN.push(newDrop());
+  while(RAIN.length>want) RAIN.pop();
+  const slant=44+WX.i*26;
+  for(const d of RAIN){
+    d.y+=d.v*dt; d.x+=slant*dt*(d.v/700);
+    if(d.y>VH+24){ const n=newDrop(); n.y=-24-Math.random()*80; Object.assign(d,n); }
+  }
+  /* splashes land on the ground, never in the sky */
+  if(WX.i>0.05){
+    const hz=horizonY();
+    splashAcc=Math.min(4,splashAcc+WX.i*WX.i*46*dt);
+    while(splashAcc>=1 && SPLASH.length<70){
+      splashAcc-=1;
+      SPLASH.push({x:Math.random()*VW, y:hz+Math.random()*Math.max(1,VH-hz),
+                   t:0, life:0.28+Math.random()*0.2});
+    }
+  }
+  for(let i=SPLASH.length-1;i>=0;i--){
+    SPLASH[i].t+=dt;
+    if(SPLASH[i].t>=SPLASH[i].life) SPLASH.splice(i,1);
+  }
+}
+/* the wet ground, the rain itself and the lightning, all in screen space */
+function drawWeather(){
+  if(WX.i<0.01 && WX.flash<=0) return;
+  const hz=horizonY();
+  ctx.save();
+  if(WX.i>0.01){
+    /* the ground goes dark and reflective */
+    const g=ctx.createLinearGradient(0,hz,0,VH);
+    g.addColorStop(0,'rgba(38,52,64,'+(0.30*WX.i)+')');
+    g.addColorStop(1,'rgba(24,36,48,'+(0.16*WX.i)+')');
+    ctx.fillStyle=g; ctx.fillRect(0,hz,VW,VH-hz);
+    /* a haze of falling water in front of the far distance */
+    ctx.fillStyle='rgba(176,196,212,'+(0.13*WX.i)+')';
+    ctx.fillRect(0,0,VW,VH);
+
+    for(const s of SPLASH){
+      const u=s.t/s.life;
+      ctx.globalAlpha=(1-u)*0.5*WX.i;
+      ctx.strokeStyle='#DCEAF2'; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.ellipse(s.x,s.y,2+u*8,(2+u*8)*0.36,0,0,TAU); ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+
+    ctx.strokeStyle='#CFE2EE'; ctx.lineCap='round';
+    for(const d of RAIN){
+      ctx.globalAlpha=d.a*WX.i;
+      ctx.lineWidth=d.w;
+      ctx.beginPath();
+      ctx.moveTo(d.x,d.y);
+      ctx.lineTo(d.x-d.len*0.30,d.y-d.len);
+      ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+  }
+  if(WX.flash>0){
+    if(WX.bolt&&WX.flash>0.72){
+      ctx.strokeStyle='rgba(232,244,255,.95)'; ctx.lineWidth=3.4;
+      ctx.lineJoin='round'; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(WX.bolt[0][0],WX.bolt[0][1]);
+      for(let i=1;i<WX.bolt.length;i++) ctx.lineTo(WX.bolt[i][0],WX.bolt[i][1]);
+      ctx.stroke();
+      ctx.globalCompositeOperation='lighter';
+      ctx.strokeStyle='rgba(160,200,255,.5)'; ctx.lineWidth=11;
+      ctx.stroke();
+      ctx.globalCompositeOperation='source-over';
+    }
+    ctx.fillStyle='rgba(226,240,255,'+(WX.flash*WX.flash*0.42)+')';
+    ctx.fillRect(0,0,VW,VH);
+  }
+  ctx.restore();
+}
 /* The horizon is a real place in the world, not a line pinned to the screen.
    Anchoring it to a depth far behind the property means the hills, the town and
    the grass all move and scale together when you zoom or pan — pinning it was
@@ -2308,6 +2731,7 @@ function drawSky(){
   const bx=VW*(0.08+0.84*clamp(p,0,1));
   const by=hz*0.92-Math.sin(clamp(p,0,1)*Math.PI)*hz*0.72;
   ctx.save();
+  ctx.globalAlpha=1-WX.i*0.94;         /* cloud closes over the sun as it rains */
   if(up){
     const gr=ctx.createRadialGradient(bx,by,2,bx,by,86);
     gr.addColorStop(0,'rgba(255,246,196,.95)'); gr.addColorStop(0.25,'rgba(255,236,150,.42)');
@@ -2465,10 +2889,158 @@ function drawStreet(){
   ctx.restore();
 }
 
+/* -------------------------------------------------------------------- road
+   A pavement with nobody driving past it is a garden path. The road runs in
+   front of the kerb, nearest the camera, and after dark the headlights sweep
+   across the grass and the fence — which is the moment the yard stops looking
+   like a diagram and starts looking like somewhere. */
+function roadK(){ return streetK()+2.7; }
+function drawRoad(){
+  const K=roadK(), z=cam.z;
+  const y=depthY(K), hz=horizonY();
+  if(y<hz-60||y>VH+200) return;
+  const w=52*z;
+  ctx.save();
+  /* kerb */
+  ctx.fillStyle=rgb(mix3([166,160,146],SUN.tint,0.55));
+  ctx.fillRect(0,y-w/2-5*z,VW,6*z);
+  /* asphalt */
+  const g=ctx.createLinearGradient(0,y-w/2,0,y+w/2);
+  g.addColorStop(0,rgb(mix3([84,84,88],SUN.tint,0.42)));
+  g.addColorStop(0.5,rgb(mix3([98,98,102],SUN.tint,0.42)));
+  g.addColorStop(1,rgb(mix3([76,76,80],SUN.tint,0.42)));
+  ctx.fillStyle=g; ctx.fillRect(0,y-w/2,VW,w);
+  /* centre line */
+  ctx.fillStyle=rgb(mix3([228,222,190],SUN.tint,0.35));
+  const step=64*z, dash=30*z;
+  const off=((-cam.x*z)%step+step)%step;
+  for(let x=off-step;x<VW+step;x+=step) ctx.fillRect(x,y-1.6*z,dash,3.2*z);
+  ctx.restore();
+}
+
+const CARS=[];
+let carT=3;
+const CAR_KINDS=[
+  {k:'car',   w:96, h:32, body:['#C6483C','#3E6EA8','#E8B23C','#4E9E6A','#E8E4DC','#2E2E36'], sp:3.4},
+  {k:'car',   w:92, h:31, body:['#7A5AA8','#C8763C','#3F9AA8','#B8BCC4'], sp:3.7},
+  {k:'van',   w:116,h:43, body:['#F2F0EA','#E0552F','#3E6EA8'], sp:2.9},
+  {k:'truck', w:136,h:48, body:['#5E7C9A','#8A6A4A'], sp:2.5},
+  {k:'moped', w:58, h:25, body:['#E8574A','#2E7C74','#2E2E36'], sp:4.2}
+];
+function trafficGap(){
+  const h=SUN.h;
+  if(h<5.5) return 14+Math.random()*26;
+  if(h<7.5) return 7+Math.random()*10;
+  if(h<10)  return 2.2+Math.random()*4;
+  if(h<16)  return 3+Math.random()*6;
+  if(h<20)  return 2+Math.random()*4.5;
+  if(h<23)  return 7+Math.random()*12;
+  return 12+Math.random()*22;
+}
+function spawnCar(){
+  const K=roadK(), dir=Math.random()<0.5?1:-1;
+  const t=CAR_KINDS[(Math.random()*CAR_KINDS.length)|0];
+  const span=clamp(3+(VW*0.5)/(TW*Math.max(0.22,cam.z)),5,20);
+  CARS.push({...t, dir, K, span,
+    gx:K/2+(dir>0?-span:span),
+    lane:dir>0?0.42:-0.42,                 /* keep right, like everyone else */
+    col:t.body[(Math.random()*t.body.length)|0],
+    sp:t.sp*(0.86+Math.random()*0.3), wob:Math.random()*TAU});
+}
+function carsUpdate(dt){
+  carT-=dt;
+  if(carT<=0){ carT=trafficGap(); if(CARS.length<4) spawnCar(); }
+  const K=roadK();
+  for(let i=CARS.length-1;i>=0;i--){
+    const v=CARS[i];
+    v.K=K;
+    v.gx+=v.dir*v.sp*dt*0.92;
+    if(v.dir>0 ? v.gx>K/2+v.span : v.gx<K/2-v.span) CARS.splice(i,1);
+  }
+}
+function drawVehicle(c,z,v){
+  const W=v.w*z, H=v.h*z, dir=v.dir;
+  c.save();
+  c.scale(dir>0?1:-1,1);
+  /* headlight wash on the road ahead — the whole point of the exercise */
+  if(SUN.lit||WX.i>0.45){
+    c.save();
+    c.globalCompositeOperation='lighter';
+    const beam=c.createLinearGradient(W*0.5,0,W*0.5+150*z,0);
+    beam.addColorStop(0,'rgba(255,238,190,'+(0.5*(SUN.night||WX.i))+')');
+    beam.addColorStop(1,'rgba(255,238,190,0)');
+    c.fillStyle=beam;
+    c.beginPath();
+    c.moveTo(W*0.48,-H*0.5);
+    c.lineTo(W*0.5+160*z,-H*1.5);
+    c.lineTo(W*0.5+160*z,H*1.1);
+    c.lineTo(W*0.48,-H*0.1);
+    c.closePath(); c.fill();
+    c.restore();
+  }
+  c.fillStyle='rgba(0,0,0,.30)';
+  c.beginPath(); c.ellipse(0,0,W*0.52,H*0.24,0,0,TAU); c.fill();
+  const R=H*0.34;
+  if(v.k==='moped'){
+    c.strokeStyle='#2A2A30'; c.lineWidth=2.4*z;
+    for(const x of [-W*0.3,W*0.32]){ c.beginPath(); c.arc(x,-R,R,0,TAU); c.stroke(); }
+    c.fillStyle=v.col;
+    roundPoly(c,[[-W*0.36,-H*0.9],[W*0.24,-H*1.0],[W*0.3,-H*0.4],[-W*0.3,-H*0.35]],4*z); c.fill();
+    c.fillStyle='#2E2E36';
+    roundPoly(c,[[-W*0.34,-H*1.25],[-W*0.06,-H*1.25],[-W*0.06,-H*0.95],[-W*0.34,-H*0.95]],3*z); c.fill();
+    /* rider */
+    c.fillStyle='#3A4048';
+    roundPoly(c,[[-W*0.22,-H*2.5],[W*0.02,-H*2.5],[W*0.06,-H*1.1],[-W*0.2,-H*1.1]],5*z); c.fill();
+    c.fillStyle='#E8C9A0';
+    c.beginPath(); c.arc(W*0.02,-H*2.85,H*0.32,0,TAU); c.fill();
+    c.fillStyle='#D8452F';
+    c.beginPath(); c.ellipse(W*0.02,-H*2.98,H*0.38,H*0.28,0,Math.PI,TAU); c.fill();
+  } else {
+    /* wheels */
+    c.fillStyle='#22242A';
+    for(const x of [-W*0.30,W*0.30]){ c.beginPath(); c.arc(x,-R,R,0,TAU); c.fill(); }
+    c.fillStyle='#6E727A';
+    for(const x of [-W*0.30,W*0.30]){ c.beginPath(); c.arc(x,-R,R*0.42,0,TAU); c.fill(); }
+    /* body */
+    const g=c.createLinearGradient(0,-H*1.7,0,-R*0.4);
+    g.addColorStop(0,shade(v.col,16)); g.addColorStop(0.55,v.col); g.addColorStop(1,shade(v.col,-18));
+    c.fillStyle=g;
+    if(v.k==='car'){
+      roundPoly(c,[[-W*0.5,-H*0.55],[-W*0.42,-H*1.05],[-W*0.14,-H*1.62],[W*0.16,-H*1.62],
+                   [W*0.42,-H*1.02],[W*0.5,-H*0.5],[W*0.46,-R*0.5],[-W*0.46,-R*0.5]],5*z); c.fill();
+      c.fillStyle='#B7D6E4';
+      roundPoly(c,[[-W*0.30,-H*1.10],[-W*0.12,-H*1.52],[W*0.10,-H*1.52],[W*0.28,-H*1.08]],3*z); c.fill();
+      c.fillStyle='rgba(255,255,255,.35)';
+      roundPoly(c,[[-W*0.28,-H*1.10],[-W*0.14,-H*1.46],[-W*0.02,-H*1.46],[-W*0.14,-H*1.08]],2*z); c.fill();
+    } else {
+      const top=v.k==='truck'?-H*1.9:-H*1.7;
+      roundPoly(c,[[-W*0.5,top],[W*0.5,top],[W*0.5,-R*0.5],[-W*0.5,-R*0.5]],4*z); c.fill();
+      c.fillStyle='#B7D6E4';
+      roundPoly(c,[[W*0.18,top+H*0.22],[W*0.44,top+H*0.22],[W*0.44,top+H*0.8],[W*0.18,top+H*0.8]],2.4*z); c.fill();
+      c.fillStyle='rgba(0,0,0,.10)';
+      roundPoly(c,[[-W*0.46,top+H*0.3],[W*0.08,top+H*0.3],[W*0.08,top+H*1.1],[-W*0.46,top+H*1.1]],3*z); c.fill();
+    }
+    /* lamps */
+    c.fillStyle=(SUN.lit||WX.i>0.45)?'#FFF0BE':'#E8E4D6';
+    roundPoly(c,[[W*0.44,-H*0.95],[W*0.5,-H*0.95],[W*0.5,-H*0.65],[W*0.44,-H*0.65]],2*z); c.fill();
+    c.fillStyle=(SUN.lit||WX.i>0.45)?'#E8574A':'#B4443A';
+    roundPoly(c,[[-W*0.5,-H*0.95],[-W*0.44,-H*0.95],[-W*0.44,-H*0.68],[-W*0.5,-H*0.68]],2*z); c.fill();
+  }
+  c.restore();
+}
+function drawCars(){
+  const K=roadK();
+  for(const v of CARS){
+    const gy=K+v.lane-v.gx;
+    const p=iso(v.gx,gy), s=w2s(p.x,p.y);
+    if(s.x<-260||s.x>VW+260) continue;
+    ctx.save(); ctx.translate(s.x,s.y); drawVehicle(ctx,cam.z,v); ctx.restore();
+  }
+}
 /* fence runs the full perimeter now, because there is land on both sides */
 function drawFence(){
   const z=cam.z, hz=horizonY();
-  const b=yardB();
+  const b=fenceB();
   const runs=[[[b.x0,b.y0],[b.x1,b.y0]],[[b.x1,b.y0],[b.x1,b.y1]],[[b.x1,b.y1],[b.x0,b.y1]],[[b.x0,b.y1],[b.x0,b.y0]]];
   const segs=[];
   for(const [A,B] of runs){
@@ -2479,6 +3051,23 @@ function drawFence(){
     }
   }
   segs.sort((p,q)=>p.d-q.d);
+  /* the fence lays its own stripe across the grass, leaning with the sun */
+  {
+    const sv=shadowVec();
+    if(sv.a>0.02){
+      const ox=sv.ux*34*z, oy=sv.uy*34*z;
+      ctx.save();
+      ctx.globalAlpha=sv.a*0.85; ctx.strokeStyle='#12340C';
+      ctx.lineWidth=7*z; ctx.lineCap='round';
+      for(const [A,B] of runs){
+        const a=iso(A[0],A[1]), b=iso(B[0],B[1]);
+        const sa=w2s(a.x,a.y), sb=w2s(b.x,b.y);
+        if(sa.y<hz&&sb.y<hz) continue;
+        ctx.beginPath(); ctx.moveTo(sa.x+ox,sa.y+oy); ctx.lineTo(sb.x+ox,sb.y+oy); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
   const woodL=rgb(mix3([210,160,99],SUN.tint,0.55));
   const woodD=rgb(mix3([168,122,64],SUN.tint,0.55));
   for(const [A,B] of runs){
@@ -2513,7 +3102,7 @@ function drawNeighbours(){
   const out=[];
   for(const [gx,gy,sd] of spots){
     if(Math.hypot(gx-hh.gx,gy-hh.gy)<clear) continue;
-    if(Math.abs(gx+gy-SK)<2.2) continue;          /* nobody builds on the pavement */
+    if(gx+gy>SK-2.2) continue;                    /* nobody builds on the pavement or in the road */
     out.push({gx,gy,sd,d:gx+gy});
   }
   out.sort((a,b)=>a.d-b.d);
@@ -2608,7 +3197,8 @@ function drawPlant2(p){
   if(!p.sid || p.i>=S.owned) return;
   const st=BYID[p.sid]; if(!st) return;
   const s=tileTop(p.gx,p.gy);
-  const g=clamp((now()-p.at)/Math.max(1,p.dur),0,1);
+  /* during the catch-up sweep the crop is drawn where it was, then grows in */
+  const g=clamp((now()+lapseOffset()-p.at)/Math.max(1,p.dur),0,1);
   const bk=Math.min(BUCKETS-1,Math.floor(g*BUCKETS));
   const spr=sprite(st,bk);
   const z=cam.z;
@@ -2625,9 +3215,9 @@ function drawPlant2(p){
      the tile centre, which read as the crop sitting in front of its own plot —
      decorations were always anchored at the tile point, so the two disagreed. */
   ctx.translate(s.x,s.y);
-  /* contact shadow grows with the plant */
-  ctx.fillStyle='rgba(0,0,0,.20)';
-  ctx.beginPath(); ctx.ellipse(0,0,(14+22*g)*z,(6+9*g)*z,0,0,TAU); ctx.fill();
+  /* contact shadow grows with the plant and leans with the sun, so a whole
+     field of them points the same way and turns together through the day */
+  castShadow(ctx,(28+44*g),(12+18*g),(12+70*g),z);
   if(ready){
     /* one cached glow sprite, blitted — building a radial gradient per ripe
        plant per frame was one of the two things killing a full farm */
@@ -2724,6 +3314,7 @@ function drawBadge(p){
 }
 
 function scene(dt){
+  wxUpdate(dt);
   updateSun();
   drawSky();
   /* clouds drift across the sky band, tinted by the hour */
@@ -2747,6 +3338,7 @@ function scene(dt){
   drawTown();
   drawGround();
   drawStreet();
+  drawRoad();
   drawNeighbours();
 
   const items=[];
@@ -2757,7 +3349,13 @@ function scene(dt){
     treeProp(ctx,z,seed); ctx.restore();
   });
   const HH=houseAt();
-  push(HH.gx,HH.gy,(s,z)=>{ ctx.save(); ctx.translate(s.x,s.y); houseProp(ctx,z,T); ctx.restore(); });
+  buildUpdate(dt);
+  push(HH.gx,HH.gy,(s,z)=>{
+    ctx.save(); ctx.translate(s.x,s.y); houseProp(ctx,z,T); ctx.restore();
+    /* dust kicked up at the foot of the works */
+    if(BLD.t>=0.12&&BLD.t<BLD.dur*0.82&&Math.random()<0.5)
+      puff(s.x+(Math.random()-0.5)*90*z, s.y-6*z, '#C9B896', 1);
+  });
   const PS=propSpots(), YB2=yardB();
   push(PS.tower[0],PS.tower[1],(s,z)=>{ ctx.save(); ctx.translate(s.x,s.y); towerProp(ctx,z); ctx.restore(); });
   push(PS.rack[0],PS.rack[1],(s,z)=>{ ctx.save(); ctx.translate(s.x,s.y); rackProp(ctx,z); ctx.restore(); });
@@ -2765,7 +3363,9 @@ function scene(dt){
   /* the left-front tree moved out of the way when the house came round here */
   tree(YB2.x0-2.6,YB2.y0-1.0,3); tree(CX-2.0,YB2.y1+3.4,11);
   tree(YB2.x1+3.4,YB2.y1-0.6,23); tree(CX+1.5,YB2.y0-3.4,41); tree(YB2.x1+2.4,YB2.y0-2.6,57);
-  push(PS.fredi[0],PS.fredi[1],(s,z)=>{ ctx.save(); ctx.translate(s.x,s.y); fredi(ctx,z,T); ctx.restore(); });
+  frediUpdate(dt);
+  push(FRD.gx,FRD.gy,(s,z)=>{ ctx.save(); ctx.translate(s.x,s.y);
+    fredi(ctx,z,T,{on:FRD.st==='walk',ph:FRD.ph,face:FRD.face,act:FRD.act}); ctx.restore(); });
   /* the nameplate, out front between the fence and the pavement */
   push(YB2.x1+1.2,YB2.y1+1.4,(s,z)=>{ ctx.save(); ctx.translate(s.x,s.y); signProp(ctx,z,T); ctx.restore(); });
   /* A band of scrub in front of the property. Without it the bottom of the
@@ -2847,6 +3447,11 @@ function scene(dt){
   for(const it of items){ if(it.plot) drawBadge(it.plot); }
   drawTutRing();
   butterflies();
+  carsUpdate(dt);
+  drawCars();
+  flockUpdate(dt);
+  drawFlock();
+  drawWeather();
   drawFX(dt);
 }
 
@@ -3259,8 +3864,7 @@ function drawGuy(c,z,g,ph,walking,arms){
   const H=g.h, bob=walking?Math.abs(Math.sin(ph))*2.2*z*H:0;
   const sw=walking?Math.sin(ph):0;
   c.save(); c.translate(0,-bob);
-  c.fillStyle='rgba(0,0,0,.18)';
-  c.beginPath(); c.ellipse(0,bob,11*z*H,4.5*z*H,0,0,TAU); c.fill();
+  c.save(); c.translate(0,bob); castShadow(c,22*H,9*H,58*H,z); c.restore();
   /* legs */
   for(const s of [-1,1]){
     const a=(s>0?sw:-sw)*0.5;
@@ -3426,7 +4030,7 @@ function spawnWalker(){
     gx:K/2+(dir>0?-span:span),
     /* where on the verge they walk, and how much they weave while they do it —
        two slow waves at different rates, so no two people trace the same line */
-    lane:-2.2+Math.random()*5.2,
+    lane:-2.2+Math.random()*3.8,
     tlane:0, off:0,
     wob:Math.random()*TAU, wobA:0.10+Math.random()*0.34, wobF:0.10+Math.random()*0.22,
     base, sp:base, dawdle:0,
@@ -3455,7 +4059,7 @@ function walkerIdea(w){
   if(r<0.16){ w.state='pause'; w.t=1.3+Math.random()*1.0; return; }
   if(r<0.34){ w.state='pause'; w.t=0.8+Math.random()*1.8; return; }
   /* no stop — just change the line they are walking and how fast */
-  w.tlane=clamp(w.lane+(Math.random()-0.5)*3.2,-2.2,3.0);
+  w.tlane=clamp(w.lane+(Math.random()-0.5)*3.2,-2.2,1.6);
   w.dawdle=0.55+Math.random()*0.7;
   w.t=2.5+Math.random()*5.5;
 }
@@ -3693,6 +4297,151 @@ function drawWalker(c,z,w){
   c.restore();
 }
 
+/* ------------------------------------------------------------------- flock
+   Sparrows that behave like sparrows: they wheel around the yard as a group,
+   drop onto the fence together, potter about, and all leave at once the moment
+   something startles them. Positions are in grid space with a height in screen
+   units, so they sit correctly however far the camera is zoomed. */
+const FLOCK={mode:'fly', t:5+Math.random()*8, anchor:{gx:CX,gy:CY-2,tgx:CX,tgy:CY-2,h:150}, birds:[]};
+for(let i=0;i<9;i++) FLOCK.birds.push({
+  gx:CX+(Math.random()-0.5)*6, gy:CY+(Math.random()-0.5)*6, h:140+Math.random()*60,
+  vx:0, vy:0, vh:0, ph:Math.random()*TAU, s:1.15+Math.random()*0.45,
+  ox:(Math.random()-0.5)*3.4, oy:(Math.random()-0.5)*3.4, oh:(Math.random()-0.5)*40,
+  perch:null, hop:0, peck:Math.random()*3, face:1
+});
+/* the top rail of the two front fence runs, which is where a bird would sit */
+function perchSpots(){
+  const b=yardB(), out=[];
+  for(let i=0;i<6;i++){
+    const t=(i+0.7)/6.6;
+    out.push([lerp(b.x1,b.x0,t), b.y1]);
+  }
+  for(let i=0;i<5;i++){
+    const t=(i+0.8)/5.8;
+    out.push([b.x1, lerp(b.y0,b.y1,t)]);
+  }
+  return out;
+}
+function flockStartle(){
+  if(FLOCK.mode==='fly') return;
+  FLOCK.mode='fly'; FLOCK.t=9+Math.random()*14;
+  for(const b of FLOCK.birds){ b.perch=null; b.vh=-90-Math.random()*70; }
+}
+function flockUpdate(dt){
+  FLOCK.t-=dt;
+  const b=yardB();
+  if(FLOCK.mode==='fly'){
+    /* the whole group drifts to a new corner of the sky every few seconds */
+    const a=FLOCK.anchor;
+    if(Math.hypot(a.tgx-a.gx,a.tgy-a.gy)<1.2){
+      a.tgx=lerp(b.x0-2,b.x1+2,Math.random());
+      a.tgy=lerp(b.y0-2,b.y1+2,Math.random());
+      a.h=110+Math.random()*90;
+    }
+    a.gx+=(a.tgx-a.gx)*Math.min(1,dt*0.5);
+    a.gy+=(a.tgy-a.gy)*Math.min(1,dt*0.5);
+    if(FLOCK.t<=0 && WX.i<0.25){       /* birds do not sit out in the rain */
+      const spots=perchSpots().sort(()=>Math.random()-0.5);
+      FLOCK.birds.forEach((k,i)=>{ k.perch=spots[i%spots.length]; });
+      FLOCK.mode='land'; FLOCK.t=14+Math.random()*22;
+    }
+    for(const k of FLOCK.birds){
+      const tx=a.gx+k.ox, ty=a.gy+k.oy, th=a.h+k.oh+Math.sin(T*1.6+k.ph)*14;
+      k.vx+=(tx-k.gx)*dt*1.9; k.vy+=(ty-k.gy)*dt*1.9; k.vh+=(th-k.h)*dt*2.4;
+      /* nobody flies through anybody */
+      for(const o of FLOCK.birds){
+        if(o===k) continue;
+        const dx=k.gx-o.gx, dy=k.gy-o.gy, d2=dx*dx+dy*dy;
+        if(d2<0.5&&d2>1e-4){ const f=dt*2.2/d2; k.vx+=dx*f; k.vy+=dy*f; }
+      }
+      k.vx*=0.94; k.vy*=0.94; k.vh*=0.9;
+      k.gx+=k.vx*dt; k.gy+=k.vy*dt; k.h+=k.vh*dt;
+      if(Math.abs(k.vx)>0.04) k.face=k.vx>0?1:-1;
+      k.ph+=dt*(9+k.s*3);
+    }
+  } else {
+    let allDown=true;
+    for(const k of FLOCK.birds){
+      if(!k.perch) continue;
+      const tx=k.perch[0], ty=k.perch[1];
+      const d=Math.hypot(tx-k.gx,ty-k.gy);
+      if(FLOCK.mode==='land'){
+        k.gx+=(tx-k.gx)*Math.min(1,dt*2.6);
+        k.gy+=(ty-k.gy)*Math.min(1,dt*2.6);
+        k.h+=(34-k.h)*Math.min(1,dt*2.2);
+        k.ph+=dt*11;
+        if(k.face!==undefined&&Math.abs(tx-k.gx)>0.02) k.face=tx>k.gx?1:-1;
+        if(d>0.05||k.h>36) allDown=false;
+      } else {
+        /* perched: shuffle along the rail, bob, peck */
+        k.peck-=dt;
+        if(k.peck<=0){ k.peck=1.2+Math.random()*3; k.hop=1; k.face=Math.random()<0.5?-1:1; }
+        if(k.hop>0) k.hop=Math.max(0,k.hop-dt*3.4);
+        k.h=34+Math.sin(k.hop*Math.PI)*7;
+      }
+    }
+    if(FLOCK.mode==='land'&&allDown){ FLOCK.mode='perch'; }
+    if(FLOCK.t<=0||WX.i>0.4) flockStartle();
+  }
+}
+function drawBird(c,z,k){
+  const flying=FLOCK.mode!=='perch';
+  const s=k.s*z;
+  c.save();
+  c.scale(k.face>0?1:-1,1);
+  const flap=flying?Math.sin(k.ph):0;
+  /* tail */
+  c.fillStyle='#5A4A3C';
+  c.beginPath(); c.moveTo(-4*s,-3*s); c.lineTo(-11*s,-1*s+flap*1.4*s); c.lineTo(-4*s,0); c.closePath(); c.fill();
+  /* body */
+  c.fillStyle='#7A6450';
+  c.beginPath(); c.ellipse(0,-4*s,6.4*s,4.4*s,-0.12,0,TAU); c.fill();
+  c.fillStyle='#C6B49A';
+  c.beginPath(); c.ellipse(0.6*s,-2.6*s,4.4*s,2.8*s,-0.1,0,TAU); c.fill();
+  /* head */
+  c.fillStyle='#6B5642';
+  c.beginPath(); c.arc(5.4*s,-7.4*s,3.3*s,0,TAU); c.fill();
+  c.fillStyle='#E8A93C';
+  c.beginPath(); c.moveTo(8.2*s,-7.6*s); c.lineTo(12*s,-6.6*s); c.lineTo(8.2*s,-5.8*s); c.closePath(); c.fill();
+  c.fillStyle='#1E1712';
+  c.beginPath(); c.arc(6.3*s,-8.2*s,0.95*s,0,TAU); c.fill();
+  /* wings: spread and beating in the air, folded on the rail */
+  if(flying){
+    c.fillStyle='#544436';
+    for(const side of [1,0.72]){
+      c.save(); c.rotate(-flap*0.75*side);
+      c.beginPath();
+      c.moveTo(-1*s,-6*s);
+      c.quadraticCurveTo(-6*s,-13*s*side,-13*s,-9*s*side);
+      c.quadraticCurveTo(-6*s,-5*s,-1*s,-5*s);
+      c.closePath(); c.fill();
+      c.restore();
+    }
+  } else {
+    c.fillStyle='#5E4C3C';
+    c.beginPath(); c.ellipse(-1.4*s,-4.4*s,4.6*s,2.6*s,0.18,0,TAU); c.fill();
+    c.strokeStyle='#4A3B2E'; c.lineWidth=0.9*s;
+    c.beginPath(); c.moveTo(1*s,0); c.lineTo(1*s,2.4*s); c.moveTo(3*s,0); c.lineTo(3*s,2.4*s); c.stroke();
+  }
+  c.restore();
+}
+function drawFlock(){
+  const hz=horizonY();
+  for(const k of FLOCK.birds){
+    const p=iso(k.gx,k.gy), sp=w2s(p.x,p.y);
+    const y=sp.y-k.h*cam.z;
+    if(y<-40||y>VH+40||sp.x<-60||sp.x>VW+60) continue;
+    /* a shadow on the grass, so they read as being above the yard */
+    if(FLOCK.mode!=='perch'&&sp.y>hz){
+      ctx.save();
+      ctx.globalAlpha=clamp(0.20-k.h*0.0009,0.03,0.2);
+      ctx.fillStyle='#12340C';
+      ctx.beginPath(); ctx.ellipse(sp.x,sp.y,7*cam.z*k.s,3*cam.z*k.s,0,0,TAU); ctx.fill();
+      ctx.restore();
+    }
+    ctx.save(); ctx.translate(sp.x,y); drawBird(ctx,cam.z,k); ctx.restore();
+  }
+}
 /* hens pottering about the yard: walk a bit, stop, peck, repeat */
 const HENS=[];
 for(let i=0;i<4;i++) HENS.push({
@@ -3869,6 +4618,8 @@ function clampCam(){
 function tapAt(sx,sy){
   const g=s2g(sx,sy);
   const gx=Math.round(g.gx), gy=Math.round(g.gy);
+  /* a hand coming down near the rail sends the whole flock up at once */
+  if(FLOCK.mode==='perch'&&FLOCK.birds.some(k=>Math.hypot(k.gx-g.gx,k.gy-g.gy)<3.2)) flockStartle();
   const p=S.plots.find(q=>q.gx===gx&&q.gy===gy);
   if(!p) return;
   actx();
@@ -3920,9 +4671,15 @@ function harvest(p){
   p.sid=null; p.at=0; p.dur=0; p.wet=false;
   const s=plotScreen(p);
   plantPop(s.x,s.y,st);
-  puff(s.x,s.y-30*cam.z,st.leaf,12);
+  /* "harvest all" fires this once per plot, so thin the trimmings out when the
+     screen is already full rather than dropping older effects on the floor */
+  const room=FX.length<170;
+  leafBurst(s.x,s.y,st,room?7:3);
+  if(room) jarFly(s.x,s.y,st);
+  puff(s.x,s.y-30*cam.z,st.leaf,room?12:5);
   popText(s.x,s.y-96*cam.z,'+'+q+(crit?' ×2!':''),crit?'#FFE066':'#CFF7B8');
   FRED.jump=1;
+  flockStartle();
   SFX.reap(); refreshHUD(); save();
   tutReach(4);
 }
@@ -4452,8 +5209,10 @@ function openShopBody(){
   if(!yNext) yb2.disabled=true;
   else yb2.onclick=()=>{
     if(S.coins<yNext.cost){ SFX.nope(); toast('חסר '+fmt(yNext.cost-S.coins)+' ₪'); return; }
+    const wasR=YARD[yl].r;
     S.coins-=yNext.cost; S.yardLvl=yl+1;
     ensurePlots(); fitCam();
+    yardGrow(wasR);                 /* the fence walks out to the new line */
     SFX.level();
     closeSheet();
     celebrate('yard','החצר גדלה!',YARD[yl+1].nm+' · '+PLOT_SPOTS.length+' מקומות לחלקות');
@@ -4475,9 +5234,12 @@ function openShopBody(){
     if(S.coins<hNext.cost){ SFX.nope(); toast('חסר '+fmt(hNext.cost-S.coins)+' ₪'); return; }
     S.coins-=hNext.cost; S.houseLvl=hl+1;
     fitCam();                       /* a taller house needs more of the frame */
-    SFX.level();
+    SFX.buy();
     closeSheet();
-    celebrate('house','הבית שודרג!',hNext.nm+' · '+hNext.fl+' קומות · מחיר מכירה ×'+(1+0.07*(hl+1)).toFixed(2));
+    buildStart();                   /* scaffolding first, banner when it drops */
+    setTimeout(()=>{ SFX.level();
+      celebrate('house','הבית שודרג!',hNext.nm+' · '+hNext.fl+' קומות · מחיר מכירה ×'+(1+0.07*(hl+1)).toFixed(2));
+    },1550);
     refreshHUD(); save();
   };
   hc.appendChild(hb); g2.appendChild(hc);
@@ -4651,7 +5413,18 @@ $('bshop').onclick=()=>{ actx(); openShop(); };
 /* ---------------------------------------------------------------- loop */
 let last=performance.now(), acc=0;
 function frame(t){
-  const dt=Math.min(0.05,(t-last)/1000); last=t; T+=dt; DT=dt;
+  /* clamp at both ends: a timestamp that goes backwards (a restored tab, a
+     clock adjustment) made dt negative, which sent cam.z through zero and threw
+     a negative radius out of the particle draw */
+  let dt=clamp((t-last)/1000,0,0.05); last=t;
+  if(LAPSE.on){
+    LAPSE.t+=dt;
+    const u=clamp(LAPSE.t/LAPSE.dur,0,1);
+    HOUR_OVERRIDE=LAPSE.h0+(LAPSE.h1-LAPSE.h0)*lapseEase();
+    dt*=1+7*Math.sin(Math.PI*u);          /* the street runs fast in the middle */
+    if(u>=1){ LAPSE.on=false; HOUR_OVERRIDE=null; lapseCard(); }
+  }
+  T+=dt; DT=dt;
   FRED.jump=Math.max(0,FRED.jump-dt*2.1);
   cam.z=lerp(cam.z,cam.tz,1-Math.pow(0.002,dt));
   resizeIfNeeded();
@@ -4774,7 +5547,10 @@ function boot(){
 }
 $('istart').onclick=()=>{
   actx();
+  /* read how long they were gone BEFORE save() stamps lastSeen to now */
+  const away=now()-(S.lastSeen||now());
   S.seen=true; save();
+  if(away>=20*60000) lapseStart(away);
   document.body.classList.remove('pre');
   setTimeout(tutPaint,600);
   ambient();
@@ -4810,6 +5586,8 @@ window.__FARM={get S(){return S;}, fmt, STRAINS, plant, harvest, sell, addXP, re
   sim(n){ for(const p of S.plots){ if(p.sid) p.at-=n; } },
   /* draw n frames by hand — a hidden tab throttles rAF to nothing, so this is
      the only way to grab a picture of the yard from a headless check */
-  pump(n){ for(let i=0;i<(n||1);i++) frame(performance.now()+i*16); }};
+  pump(n){ for(let i=0;i<(n||1);i++) frame(last+16); },
+  /* force the weather: 0 clears it, 1 opens the sky */
+  rain(x){ if(x>0){ WX.mode='rain'; WX.t=0; WX.dur=x*60; } else { WX.mode='clear'; WX.next=300; } }};
 })();
 </script>
