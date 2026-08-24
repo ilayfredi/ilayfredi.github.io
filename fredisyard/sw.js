@@ -1,7 +1,7 @@
 /* Service worker for החצר של פרדי.
    The whole game is one HTML file, so caching it means the game opens and plays
    with no connection at all after the first visit. */
-const CACHE = 'fredisyard-v19';
+const CACHE = 'fredisyard-v20';
 const CORE = [
   './',
   './index.html',

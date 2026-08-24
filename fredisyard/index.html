@@ -390,6 +390,31 @@ body.pre .hud,body.pre #quick{opacity:0;pointer-events:none}
   .tpill span{display:none}
 }
 
+/* ============================================================ tutorial */
+#tutbar{position:fixed;z-index:22;left:50%;transform:translateX(-50%) translateY(-14px);
+  top:calc(58px + env(safe-area-inset-top));max-width:min(92vw,420px);
+  background:linear-gradient(#FFFCF2,#FFE9C0);border:3px solid var(--wood-x);
+  border-radius:15px;padding:9px 16px;text-align:center;direction:rtl;
+  font-family:var(--disp);font-weight:600;font-size:14.5px;color:var(--ink);
+  box-shadow:0 5px 0 rgba(94,58,24,.5),0 10px 24px rgba(0,0,0,.3);
+  opacity:0;pointer-events:none;transition:opacity .3s ease,transform .3s cubic-bezier(.2,1.4,.4,1)}
+#tutbar.on{opacity:1;transform:translateX(-50%) translateY(0)}
+#tutbar::after{content:"";position:absolute;left:50%;bottom:-9px;width:14px;height:14px;
+  transform:translateX(-50%) rotate(45deg);background:#FFE9C0;
+  border-right:3px solid var(--wood-x);border-bottom:3px solid var(--wood-x)}
+.tut-glow{animation:tutpulse 1.25s ease-in-out infinite;
+  outline:3px solid #FFD75E;outline-offset:2px;border-radius:16px;z-index:23}
+@keyframes tutpulse{50%{outline-color:#FFF3C4;transform:scale(1.03)}}
+
+/* what to aim for next, quietly */
+#nexthint{position:fixed;z-index:9;left:50%;transform:translateX(-50%);
+  top:calc(52px + env(safe-area-inset-top));
+  background:rgba(28,52,22,.55);color:#F2FFE6;border-radius:999px;
+  padding:5px 14px;font-size:12px;font-weight:700;direction:rtl;white-space:nowrap;
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  opacity:0;pointer-events:none;transition:opacity .4s}
+#nexthint.on{opacity:1}
+
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms !important;transition-duration:.01ms !important}}
 </style>
 
@@ -804,7 +829,9 @@ const GOALS=[
 
 /* ---------------------------------------------------------------- save */
 const KEY='fredis_farm_v1';
-const BUILD='19';                     /* bump on every publish, shown in settings */
+const BUILD='20';                    /* bump on every publish, shown in settings */
+const SAVE_V=2;                      /* save schema; normalize() upgrades in place */
+const TUT_DONE=99;                   /* tutorial step meaning "finished" */
 let S=null;
 function fresh(){
   return {
@@ -812,7 +839,7 @@ function fresh(){
     plots:[], inv:{}, ups:{lamp:0,fert:0,sprk:0,mrkt:0,ghs:0},
     orders:[], lastOrder:0, lastSeen:now(), lastSeed:'g0',
     earned:0, harvested:0, prestige:0, seen:false,
-    goals:{}, filled:0, daily:null, sfx:true, planted:0, days:0,
+    goals:{}, filled:0, daily:null, sfx:true, planted:0, days:0, tut:0,
     yardLvl:0, houseLvl:0, decor:{}
   };
 }
@@ -904,15 +931,31 @@ function save(){
 }
 function hardReset(){
   RESETTING=true;
-  try{ localStorage.removeItem(KEY); }catch(e){}
+  /* the backup has to go too, or boot would helpfully restore the farm the
+     player just asked to delete */
+  try{ localStorage.removeItem(KEY); localStorage.removeItem(KEY_BAK); }catch(e){}
   location.reload();
 }
+/* Accept any save this game ever wrote, including ones from a newer build than
+   the phone has cached. Only a save that will not parse at all is refused. */
 function load(){
   try{
     const raw=localStorage.getItem(KEY);
-    if(raw){ const p=JSON.parse(raw); if(p&&p.v===1) return p; }
+    if(raw){ const p=JSON.parse(raw); if(p&&typeof p==='object'&&typeof p.coins==='number') return p; }
   }catch(e){}
   return null;
+}
+const KEY_BAK=KEY+'_bak';
+function loadBackup(){
+  try{
+    const raw=localStorage.getItem(KEY_BAK);
+    if(raw){ const p=JSON.parse(raw); if(p&&typeof p==='object'&&typeof p.coins==='number') return p; }
+  }catch(e){}
+  return null;
+}
+/* one rolling backup of the last save that booted cleanly */
+function writeBackup(obj){
+  try{ localStorage.setItem(KEY_BAK, typeof obj==='string'?obj:JSON.stringify(obj)); }catch(e){}
 }
 
 /* ---------------------------------------------------------------- economy */
@@ -947,6 +990,52 @@ function blip(f,d,type,g0,f2){
   g.gain.exponentialRampToValueAtTime(0.0001,t+d);
   o.connect(g); g.connect(c.destination); o.start(t); o.stop(t+d+0.03);
 }
+/* A quiet outdoor bed: a little wind, the odd bird. Synthesised, so it costs
+   nothing to download and stops dead when sound is switched off. */
+let AMB=null;
+function ambient(){
+  if(!A.on||AMB) return;
+  const c=actx(); if(!c) return;
+  if(c.state==='suspended') c.resume();
+  const g=c.createGain(); g.gain.value=0.0; g.connect(c.destination);
+  /* wind: filtered noise, slowly breathing */
+  const len=c.sampleRate*3, buf=c.createBuffer(1,len,c.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
+  const src=c.createBufferSource(); src.buffer=buf; src.loop=true;
+  const lp=c.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=340; lp.Q.value=0.5;
+  const wg=c.createGain(); wg.gain.value=0.05;
+  src.connect(lp); lp.connect(wg); wg.connect(g); src.start();
+  const lfo=c.createOscillator(), lg=c.createGain();
+  lfo.frequency.value=0.06; lg.gain.value=0.03;
+  lfo.connect(lg); lg.connect(wg.gain); lfo.start();
+  g.gain.linearRampToValueAtTime(1,c.currentTime+2.5);
+  AMB={g,src,lfo,birds:null};
+  const chirp=()=>{
+    if(!AMB||!A.on) return;
+    if(SUN.night<0.5){
+      const t=c.currentTime, n=2+((Math.random()*3)|0);
+      for(let i=0;i<n;i++){
+        const o=c.createOscillator(), og=c.createGain();
+        o.type='sine';
+        const f=1700+Math.random()*1400;
+        o.frequency.setValueAtTime(f,t+i*0.09);
+        o.frequency.exponentialRampToValueAtTime(f*(1.1+Math.random()*0.4),t+i*0.09+0.06);
+        og.gain.setValueAtTime(0.0001,t+i*0.09);
+        og.gain.exponentialRampToValueAtTime(0.02,t+i*0.09+0.012);
+        og.gain.exponentialRampToValueAtTime(0.0001,t+i*0.09+0.09);
+        o.connect(og); og.connect(g); o.start(t+i*0.09); o.stop(t+i*0.09+0.14);
+      }
+    }
+    AMB.birds=setTimeout(chirp, 6000+Math.random()*14000);
+  };
+  AMB.birds=setTimeout(chirp,2500);
+}
+function ambientStop(){
+  if(!AMB) return;
+  try{ AMB.src.stop(); AMB.lfo.stop(); clearTimeout(AMB.birds); }catch(e){}
+  AMB=null;
+}
+
 const SFX={
   plant(){ blip(320,0.12,'triangle',0.07,520); },
   water(){ blip(760,0.16,'sine',0.05,300); },
@@ -1835,6 +1924,14 @@ function drawFX(dt){
       const k=cam.z*PSCALE*(1+e*0.55);
       ctx.translate(p.x,p.y+10*cam.z-e*26*cam.z);
       ctx.drawImage(spr,-SPRW*k/2,-SPRH*k+14*cam.z,SPRW*k,SPRH*k);
+    } else if(p.k==='ring'){
+      /* a tap always answers, even when the tap does nothing else */
+      const e=1-Math.pow(1-u,2);
+      ctx.globalAlpha=(1-u)*0.7;
+      ctx.lineWidth=3*cam.z;
+      ctx.strokeStyle='#FFF6D8';
+      diamond(ctx,p.x,p.y,TW*cam.z*(0.5+e*0.75),TH*cam.z*(0.5+e*0.75));
+      ctx.stroke();
     } else if(p.k==='puff'){
       const y=p.y+p.vy*u+240*u*u, x=p.x+p.vx*u;
       ctx.globalAlpha=(1-u)*0.85;
@@ -2128,6 +2225,19 @@ function drawNeighbours(){
     ctx.save(); ctx.translate(s.x,s.y);
     if(o.sd%3===2){ treeProp(ctx,z*1.1,o.sd*7); }
     else {
+      /* a scrap of garden so the neighbours stand on something rather than
+         floating on bare grass */
+      ctx.fillStyle=rgb(mix3([104,168,74],SUN.tint,0.5));
+      ctx.beginPath(); ctx.ellipse(0,6*z,86*z,32*z,0,0,TAU); ctx.fill();
+      ctx.fillStyle=rgb(mix3([196,170,124],SUN.tint,0.5));
+      ctx.beginPath(); ctx.ellipse(0,26*z,26*z,10*z,0,0,TAU); ctx.fill();
+      ctx.fillStyle=rgb(mix3([62,132,54],SUN.tint,0.5));
+      for(let k=0;k<5;k++){
+        const a=Math.PI+(k/4)*Math.PI;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a)*70*z, 8*z+Math.sin(a)*16*z, (9+hash(o.sd*5+k)*5)*z, 0, TAU);
+        ctx.fill();
+      }
       const w=118*z, h=(66+hash(o.sd*5)*30)*z;
       ctx.fillStyle='rgba(0,0,0,.18)'; diamond(ctx,0,0,w*1.15,h*0.42); ctx.fill();
       const wall=rgb(mix3(mix3([240,226,198],[176,150,116],hash(o.sd*3)),SUN.tint,0.55));
@@ -2425,6 +2535,7 @@ function scene(dt){
   ctx.fillStyle=vg; ctx.fillRect(0,VH-150,VW,150);
 
   for(const it of items){ if(it.plot) drawBadge(it.plot); }
+  drawTutRing();
   butterflies();
   drawFX(dt);
 }
@@ -2756,6 +2867,7 @@ function tapAt(sx,sy){
   const p=S.plots.find(q=>q.gx===gx&&q.gy===gy);
   if(!p) return;
   actx();
+  { const s=tileTop(p.gx,p.gy); fx({k:'ring',x:s.x,y:s.y,life:0.42}); }
   if(p.i>=S.owned){
     if(p.i===S.owned) buyPlot(); else toast('קודם תרחיב את החלקות שלפניה');
     return;
@@ -2781,6 +2893,7 @@ function plant(p,st){
   const s=plotScreen(p);
   puff(s.x,s.y-20*cam.z,'#8A5A38',7);
   SFX.plant(); refreshHUD(); save();
+  tutReach(1);
   return true;
 }
 function water(p){
@@ -2789,7 +2902,7 @@ function water(p){
   const left=p.at+p.dur-now();
   p.dur-=Math.floor(left*0.4);
   const s=plotScreen(p);
-  drops(s.x,s.y); SFX.water(); save();
+  drops(s.x,s.y); SFX.water(); save(); tutReach(2);
 }
 function harvest(p){
   const st=BYID[p.sid]; if(!st) return;
@@ -2806,6 +2919,7 @@ function harvest(p){
   popText(s.x,s.y-96*cam.z,'+'+q+(crit?' ×2!':''),crit?'#FFE066':'#CFF7B8');
   FRED.jump=1;
   SFX.reap(); refreshHUD(); save();
+  tutReach(4);
 }
 function sell(id,qty){
   const st=BYID[id]; const have=invOf(id);
@@ -2816,6 +2930,7 @@ function sell(id,qty){
   SFX.coin(); coinBurst(VW*0.5,VH*0.55,Math.min(14,4+qty));
   popText(VW*0.5,VH*0.42,'+'+fmt(gain)+' ₪','#FFE9A8');
   refreshHUD(); save();
+  tutReach(6);
   return gain;
 }
 function buyPlot(){
@@ -2893,6 +3008,80 @@ function fillOrder(o){
   refreshHUD(); save(); openOrders();
 }
 
+/* ---------------------------------------------------------------- tutorial
+   The first minute decides whether anyone stays, so it is walked step by step:
+   one instruction at a time, the target ringed on the field or lit up in the
+   dock, and it only advances when the player actually does the thing. */
+const TUT=[
+  {t:'לחץ על החלקה החומה כדי לשתול', target:'plot-empty'},
+  {t:'בחר את הזן הראשון שלך',        target:'#shBody .card'},
+  {t:'עכשיו השקה — לחץ שוב על החלקה', target:'plot-dry'},
+  {t:'רגע... זה גדל. חכה שיופיע ✓',   target:'plot-growing', passive:true},
+  {t:'מוכן! לחץ על החלקה כדי לקצור',  target:'plot-ready'},
+  {t:'פתח את המחסן',                  target:'#bbarn'},
+  {t:'מכור את היבול וקבל כסף',        target:'#shBody .buy'}
+];
+function tutStep(){ return (S && S.tut<TUT.length) ? TUT[S.tut] : null; }
+/* "the player just did the thing for step N". Never require the steps in order:
+   somebody who harvests without watering, or whose sprinkler waters for them,
+   would otherwise be stuck on a step they can no longer perform. */
+function tutReach(step){
+  if(!S||S.tut>=TUT.length) return;
+  if(step<S.tut) return;
+  S.tut=step+1;
+  if(S.tut>=TUT.length){
+    S.tut=TUT_DONE;
+    S.coins+=250;
+    toast('כל הכבוד! זה כל המשחק. עכשיו תגדיל.');
+    SFX.level(); coinBurst(VW*0.5,VH*0.55,10);
+  }
+  refreshHUD(); tutPaint(); save();
+}
+let tutEl=null, tutGlow=null, tutShown=-1;
+function tutPaint(){
+  const st=tutStep();
+  if(tutGlow){ tutGlow.classList.remove('tut-glow'); tutGlow=null; }
+  if(!tutEl){
+    tutEl=document.createElement('div');
+    tutEl.id='tutbar';
+    document.body.appendChild(tutEl);
+  }
+  if(!st || document.getElementById('intro')){ tutEl.classList.remove('on'); return; }
+  tutEl.textContent=st.t;
+  tutEl.classList.add('on');
+  if(st.target && st.target[0]==='#'){
+    const el=document.querySelector(st.target);
+    if(el){ el.classList.add('tut-glow'); tutGlow=el; }
+  }
+}
+/* the ring drawn on the field for whichever plot the step is about */
+function tutPlot(){
+  const st=tutStep(); if(!st||!st.target||st.target[0]==='#') return null;
+  const owned=S.plots.filter(p=>p.i<S.owned);
+  if(st.target==='plot-empty')   return owned.find(p=>!p.sid)||null;
+  if(st.target==='plot-dry')     return owned.find(p=>p.sid&&!p.wet&&now()<p.at+p.dur)||null;
+  if(st.target==='plot-growing') return owned.find(p=>p.sid&&now()<p.at+p.dur)||null;
+  if(st.target==='plot-ready')   return owned.find(p=>p.sid&&now()>=p.at+p.dur)||null;
+  return null;
+}
+function drawTutRing(){
+  const p=tutPlot(); if(!p) return;
+  const s=tileTop(p.gx,p.gy), z=cam.z;
+  const pulse=0.5+0.5*Math.sin(T*3.2);
+  ctx.save();
+  ctx.lineWidth=(3+pulse*2)*z;
+  ctx.strokeStyle='rgba(255,244,180,'+(0.55+0.4*pulse)+')';
+  diamond(ctx,s.x,s.y,TW*z*(1.02+pulse*0.06),TH*z*(1.02+pulse*0.06));
+  ctx.stroke();
+  /* a hand tapping the tile */
+  ctx.translate(s.x+18*z, s.y-26*z-pulse*7*z);
+  ctx.rotate(-0.25);
+  ctx.fillStyle='#FFE9C9'; ctx.strokeStyle='#6B4A24'; ctx.lineWidth=2*z;
+  ctx.beginPath(); ctx.ellipse(0,0,9*z,13*z,0,0,TAU); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0,-13*z,4.5*z,10*z,0,0,TAU); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
 /* ---------------------------------------------------------------- toasts */
 function toast(txt){
   const d=document.createElement('div');
@@ -2901,6 +3090,29 @@ function toast(txt){
   setTimeout(()=>{ d.style.transition='opacity .3s'; d.style.opacity='0';
     setTimeout(()=>d.remove(),320); }, 1700);
   while($('toasts').children.length>3) $('toasts').firstChild.remove();
+}
+
+/* One quiet line saying what is worth aiming at next, so there is always a
+   reason to come back rather than a wall of menus to work it out from. */
+let hintEl=null;
+function nextHint(){
+  if(!hintEl){ hintEl=document.createElement('div'); hintEl.id='nexthint'; document.body.appendChild(hintEl); }
+  if(S.tut<TUT_DONE || document.getElementById('intro')){ hintEl.classList.remove('on'); return; }
+  let txt='';
+  const locked=STRAINS.find(s=>!unlocked(s));
+  const readyGoal=GOALS.find(goalReady);
+  const orderReady=S.orders.find(canFill);
+  const cheapPlot=plotCost();
+  if(orderReady) txt='יש הזמנה מוכנה למשלוח';
+  else if(readyGoal) txt='מטרה הושלמה: '+readyGoal.nm;
+  else if(dailyReady()) txt='הבונוס היומי מחכה';
+  else if(S.owned<PLOT_SPOTS.length && S.coins>=cheapPlot) txt='אפשר לקנות חלקה נוספת';
+  else if(locked && S.level>=locked.lvl-2) txt='רמה '+locked.lvl+' פותחת את '+locked.nm;
+  else if(S.owned<PLOT_SPOTS.length) txt='עוד '+fmt(cheapPlot-S.coins)+' ₪ לחלקה הבאה';
+  else if(YARD[yardLv()+1]) txt='עוד '+fmt(Math.max(0,YARD[yardLv()+1].cost-S.coins))+' ₪ להרחבת השטח';
+  if(!txt){ hintEl.classList.remove('on'); return; }
+  if(hintEl.textContent!==txt) hintEl.textContent=txt;
+  hintEl.classList.add('on');
 }
 
 /* ---------------------------------------------------------------- hud */
@@ -2925,6 +3137,12 @@ function refreshHUD(){
   const ready=S.orders.filter(canFill).length;
   $('border').classList.toggle('has',ready>0);
   $('odot').textContent=ready;
+  /* the "wait for it to grow" step has nothing to tap; move it on by itself */
+  if(S.tut===3 && S.plots.some(p=>p.i<S.owned&&p.sid&&now()>=p.at+p.dur)) S.tut=4;
+  /* keep the coach mark honest even if the step changed somewhere that did not
+     repaint it — a stale instruction is worse than none */
+  if(S.tut!==tutShown){ tutShown=S.tut; tutPaint(); }
+  nextHint();
   const gr=GOALS.filter(goalReady).length+(dailyReady()?1:0);
   $('bmore').classList.toggle('has',gr>0);
   $('gdot').textContent=gr;
@@ -2956,6 +3174,7 @@ function openSheet(title,sub){
   $('shTitle').textContent=title; $('shSub').textContent=sub||'';
   $('sheet').classList.add('on'); $('veil').classList.add('on');
   $('shBody').scrollTop=0;
+  setTimeout(tutPaint,60);          /* highlight the card the step points at */
 }
 /* stagger whatever the sheet just rendered */
 function stagger(){
@@ -3292,7 +3511,9 @@ function openMore(){
   const sr=document.createElement('div'); sr.className='setrow';
   sr.innerHTML='<div class="lab">צלילים</div>';
   const tg=document.createElement('div'); tg.className='tgl'+(A.on?' on':'');
-  tg.onclick=()=>{ A.on=!A.on; S.sfx=A.on; tg.classList.toggle('on',A.on); if(A.on) SFX.coin(); save(); };
+  tg.onclick=()=>{ A.on=!A.on; S.sfx=A.on; tg.classList.toggle('on',A.on);
+    if(A.on){ SFX.coin(); ambient(); } else ambientStop();
+    save(); };
   sr.appendChild(tg); b.appendChild(sr);
 
   const sh=document.createElement('div'); sh.className='setrow';
@@ -3351,7 +3572,7 @@ function openMore(){
 
 $('bmore').onclick=()=>{ actx(); openMore(); };
 $('bseeds').onclick=()=>{ pending=null; actx(); openSeeds(); };
-$('bbarn').onclick=()=>{ actx(); openBarn(); };
+$('bbarn').onclick=()=>{ actx(); openBarn(); tutReach(5); };
 $('border').onclick=()=>{ actx(); openOrders(); };
 $('bshop').onclick=()=>{ actx(); openShop(); };
 
@@ -3406,9 +3627,12 @@ function offlineReport(){
   }
 }
 
-function boot(){
-  const p=load();
-  S = p || fresh();
+/* Everything that turns a stored save into a save this build can run. It is
+   deliberately additive and defensive: unknown fields are left alone, missing
+   ones get defaults, nothing is ever deleted. That is what lets a farm survive
+   every future update — including a save written by a NEWER build than the one
+   the phone happens to have cached. */
+function normalize(){
   if(!S.ups) S.ups={lamp:0,fert:0,sprk:0,mrkt:0,ghs:0};
   for(const k of ['lamp','fert','sprk','mrkt','ghs']) if(typeof S.ups[k]!=='number') S.ups[k]=0;
   if(!S.inv) S.inv={};
@@ -3446,6 +3670,24 @@ function boot(){
     if(o&&o.sid&&BYID[o.sid]){ S.plots[i].sid=o.sid; S.plots[i].at=o.at; S.plots[i].dur=o.dur; S.plots[i].wet=!!o.wet; }
   }
   S.owned=clamp(S.owned||6,1,PLOT_SPOTS.length);
+  if(typeof S.tut!=='number') S.tut=(S.seen||S.harvested>0)?TUT_DONE:0;
+  S.v=SAVE_V;
+}
+
+function boot(){
+  let raw=load(), usedBackup=false;
+  /* primary unreadable but a backup survives — use it rather than starting over */
+  if(!raw){ const bak=loadBackup(); if(bak){ raw=bak; usedBackup=true; } }
+  S = raw || fresh();
+  try{ normalize(); }
+  catch(e){
+    /* a save this build genuinely cannot read: fall back to the rolling backup
+       rather than dropping someone's farm on the floor */
+    const bak=loadBackup();
+    if(bak){ S=bak; usedBackup=true; try{ normalize(); }catch(e2){ S=fresh(); normalize(); } }
+    else { S=fresh(); normalize(); }
+  }
+  if(raw && !usedBackup) writeBackup(raw);
 
   document.body.classList.add('pre');
   resize(); fitCam();
@@ -3462,6 +3704,8 @@ $('istart').onclick=()=>{
   actx();
   S.seen=true; save();
   document.body.classList.remove('pre');
+  setTimeout(tutPaint,600);
+  ambient();
   const el=$('intro'); el.style.opacity='0';
   setTimeout(()=>el.remove(),520);
   if(!S.plots.some(p=>p.sid) && S.coins>=STRAINS[0].seed) toast('לחץ על חלקה חומה כדי לשתול');
