@@ -877,7 +877,7 @@ const GOALS=[
 
 /* ---------------------------------------------------------------- save */
 const KEY='fredis_farm_v1';
-const BUILD='23';                    /* bump on every publish, shown in settings */
+const BUILD='24';                    /* bump on every publish, shown in settings */
 const SAVE_V=2;                      /* save schema; normalize() upgrades in place */
 const TUT_DONE=99;                   /* tutorial step meaning "finished" */
 let S=null;
@@ -2729,7 +2729,9 @@ function drawSky(){
   const up=SUN.alt>-0.02;
   const p=up?day:((SUN.h<6?SUN.h+6:SUN.h-18)/12);
   const bx=VW*(0.08+0.84*clamp(p,0,1));
-  const by=hz*0.92-Math.sin(clamp(p,0,1)*Math.PI)*hz*0.72;
+  /* on a short screen the horizon sits high and the arc put the sun off the
+     top of the frame, so it was drawn as a clipped half-disc */
+  const by=Math.max(30,hz*0.92-Math.sin(clamp(p,0,1)*Math.PI)*hz*0.72);
   ctx.save();
   ctx.globalAlpha=1-WX.i*0.94;         /* cloud closes over the sun as it rains */
   if(up){
@@ -3159,8 +3161,23 @@ function drawNightLights(){
   put(12.2,9.3,90,'255,214,150',0.26);
   ctx.restore();
 }
+/* How many plants are ready right now, counted once a frame. A handful of ripe
+   plants in a big field must still glow so you can find them; a whole field of
+   them glowing at low zoom is just a green haze that costs a lot to draw. */
+let READY_N=0;
+function countReady(){
+  let n=0, t=now()+lapseOffset();
+  for(const p of S.plots){ if(p.sid&&p.i<S.owned&&t>=p.at+p.dur) n++; }
+  READY_N=n;
+}
+/* A grown farm holds 180 plots and most of them are off the side of the phone.
+   Nothing was checking, so every one of them was being drawn every frame. */
+function plotVisible(s){
+  return s.x>-110 && s.x<VW+110 && s.y>-240 && s.y<VH+140;
+}
 function drawPlot(p){
   const s=tileTop(p.gx,p.gy);
+  if(!plotVisible(s)) return;
   const z=cam.z, w=TW*z*0.92, h=TH*z*0.92;
   if(p.i>=S.owned){
     /* only the next plot for sale is marked; outlining all forty-nine turned the
@@ -3182,13 +3199,15 @@ function drawPlot(p){
   ctx.fillStyle='#5C3B22'; diamond(ctx,s.x,s.y+4*z,w,h); ctx.fill();
   ctx.fillStyle=p.sid?(p.wet?'#6B4527':'#8A5A38'):'#8A5A38';
   diamond(ctx,s.x,s.y,w,h); ctx.fill();
-  ctx.strokeStyle='#A8703F'; ctx.lineWidth=1.6*z;
-  for(let i=1;i<4;i++){
-    const t=i/4;
-    ctx.beginPath();
-    ctx.moveTo(s.x-w/2+w/2*t, s.y-h/2*t);
-    ctx.lineTo(s.x+w/2*t, s.y+h/2-h/2*t);
-    ctx.stroke();
+  if(z>0.44){                      /* furrows are sub-pixel noise when far out */
+    ctx.strokeStyle='#A8703F'; ctx.lineWidth=1.6*z;
+    for(let i=1;i<4;i++){
+      const t=i/4;
+      ctx.beginPath();
+      ctx.moveTo(s.x-w/2+w/2*t, s.y-h/2*t);
+      ctx.lineTo(s.x+w/2*t, s.y+h/2-h/2*t);
+      ctx.stroke();
+    }
   }
   ctx.lineWidth=2.6*z; ctx.strokeStyle='#6F4626';
   diamond(ctx,s.x,s.y,w,h); ctx.stroke();
@@ -3197,11 +3216,18 @@ function drawPlant2(p){
   if(!p.sid || p.i>=S.owned) return;
   const st=BYID[p.sid]; if(!st) return;
   const s=tileTop(p.gx,p.gy);
+  if(!plotVisible(s)) return;
   /* during the catch-up sweep the crop is drawn where it was, then grows in */
   const g=clamp((now()+lapseOffset()-p.at)/Math.max(1,p.dur),0,1);
   const bk=Math.min(BUCKETS-1,Math.floor(g*BUCKETS));
-  const spr=sprite(st,bk);
-  const z=cam.z;
+  const z=cam.z, zq=zStep();
+  /* Hold the baked sprite on the plot. Rebuilding the cache key and hashing it
+     for every plant every frame is real work once there are a hundred and
+     eighty of them; three comparisons are not. */
+  if(p._sid!==p.sid||p._bk!==bk||p._zq!==zq){
+    p._spr=sprite(st,bk,zq); p._sid=p.sid; p._bk=bk; p._zq=zq;
+  }
+  const spr=p._spr;
   /* squash-and-stretch whenever the plant crosses into a new growth stage */
   if(p.bk===undefined) p.bk=bk;
   if(bk!==p.bk){ p.bk=bk; p.pop=1; }
@@ -3220,12 +3246,16 @@ function drawPlant2(p){
   castShadow(ctx,(28+44*g),(12+18*g),(12+70*g),z);
   if(ready){
     /* one cached glow sprite, blitted — building a radial gradient per ripe
-       plant per frame was one of the two things killing a full farm */
-    const pl=0.5+0.5*Math.sin(T*2.6+p.i);
-    const gs=glowSprite(), r=74*z;
-    ctx.globalAlpha=0.30+0.14*pl;
-    ctx.drawImage(gs,-r,-46*z-r,r*2,r*2);
-    ctx.globalAlpha=1;
+       plant per frame was one of the two things killing a full farm. Pulled
+       right out when the camera is far back: a hundred overlapping halos at
+       that size are a green haze that tells the player nothing. */
+    if(z>0.38||READY_N<=24){
+      const pl=0.5+0.5*Math.sin(T*2.6+p.i);
+      const gs=glowSprite(), r=74*z;
+      ctx.globalAlpha=0.30+0.14*pl;
+      ctx.drawImage(gs,-r,-46*z-r,r*2,r*2);
+      ctx.globalAlpha=1;
+    }
     ctx.translate(0,Math.sin(T*2.6+p.i)*2.2*z);
   }
   ctx.rotate(sway);
@@ -3315,6 +3345,7 @@ function drawBadge(p){
 
 function scene(dt){
   wxUpdate(dt);
+  countReady();
   updateSun();
   drawSky();
   /* clouds drift across the sky band, tinted by the hour */
@@ -4620,7 +4651,12 @@ function tapAt(sx,sy){
   const gx=Math.round(g.gx), gy=Math.round(g.gy);
   /* a hand coming down near the rail sends the whole flock up at once */
   if(FLOCK.mode==='perch'&&FLOCK.birds.some(k=>Math.hypot(k.gx-g.gx,k.gy-g.gy)<3.2)) flockStartle();
-  const p=S.plots.find(q=>q.gx===gx&&q.gy===gy);
+  let p=S.plots.find(q=>q.gx===gx&&q.gy===gy);
+  /* A grown plant is drawn standing UP from its tile, so it covers the tiles
+     behind it on screen. Tapping the leaves used to land on empty ground and do
+     nothing; if there is no plot under the finger, take the one in front whose
+     plant the finger was actually on. */
+  if(!p) p=S.plots.find(q=>q.gx===gx+1&&q.gy===gy+1&&q.i<S.owned&&q.sid);
   if(!p) return;
   actx();
   { const s=tileTop(p.gx,p.gy); fx({k:'ring',x:s.x,y:s.y,life:0.42}); }
@@ -5281,9 +5317,15 @@ function openShopBody(){
     pb2.textContent = pts>0 ? ('התחל קציר גדול · +'+pts) : 'צריך עוד רווחים';
     if(pts<=0) pb2.disabled=true;
     else pb2.onclick=()=>{
-      const keep=S.prestige+pts, best=S.earned;
+      const keep=S.prestige+pts;
       S=fresh(); S.prestige=keep; S.earned=0; S.seen=true;
-      ensurePlots(); SFX.level(); toast('קציר גדול! מחיר ×'+(1+0.30*keep).toFixed(2));
+      ensurePlots();
+      /* the yard just went from an empire back to a shack: reframe it, and put
+         Fredi back by the stall instead of stranding him out in a field that
+         no longer exists */
+      fitCam();
+      FRD.gx=null; YRD.t=-1; BLD.t=-1;
+      SFX.level(); toast('קציר גדול! מחיר ×'+(1+0.30*keep).toFixed(2));
       refreshHUD(); save(); closeSheet();
     };
     box.appendChild(pb2);
@@ -5454,9 +5496,13 @@ function resizeIfNeeded(){
 }
 
 /* ---------------------------------------------------------------- boot */
+/* How long the player was away, read once at boot. It cannot be read later:
+   the fifteen-second autosave stamps lastSeen to now, so anyone who left the
+   intro screen up for a moment lost their catch-up sweep. */
+let AWAY_MS=0;
 function offlineReport(){
   const box=$('offbox'); box.innerHTML='';
-  const gone=now()-(S.lastSeen||now());
+  const gone=AWAY_MS;
   if(S.seen && gone>=60000){
     const rdy=S.plots.filter(p=>p.i<S.owned&&p.sid&&now()>=p.at+p.dur).length;
     const mins=Math.floor(gone/60000);
@@ -5534,6 +5580,7 @@ function boot(){
   }
   if(raw && !usedBackup) writeBackup(raw);
 
+  AWAY_MS=now()-(S.lastSeen||now());
   document.body.classList.add('pre');
   resize(); fitCam();
   updateSun();                       /* so the clock pill is right on frame one */
@@ -5547,10 +5594,8 @@ function boot(){
 }
 $('istart').onclick=()=>{
   actx();
-  /* read how long they were gone BEFORE save() stamps lastSeen to now */
-  const away=now()-(S.lastSeen||now());
   S.seen=true; save();
-  if(away>=20*60000) lapseStart(away);
+  if(AWAY_MS>=20*60000) lapseStart(AWAY_MS);
   document.body.classList.remove('pre');
   setTimeout(tutPaint,600);
   ambient();
